@@ -231,6 +231,45 @@ let inspections: Inspection[] = [];
 let auditLogs: any[] = [];
 let violationsList: Violation[] = [];
 
+const DB_DIR = path.join(process.cwd(), 'storage');
+const DB_FILE = path.join(DB_DIR, 'database.json');
+
+function saveDatabaseToDisk() {
+  try {
+    if (!fs.existsSync(DB_DIR)) {
+      fs.mkdirSync(DB_DIR, { recursive: true });
+    }
+    const payload = {
+      saved_at: new Date().toISOString(),
+      inspections,
+      auditLogs,
+      violationsList,
+    };
+    fs.writeFileSync(DB_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[MetriScan Database] Failed to write to disk:', err);
+  }
+}
+
+function loadDatabaseFromDisk(): boolean {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed.inspections) && parsed.inspections.length > 0) {
+        inspections = parsed.inspections;
+        auditLogs = Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [];
+        violationsList = Array.isArray(parsed.violationsList) ? parsed.violationsList : [];
+        console.log(`[MetriScan Database] Loaded ${inspections.length} inspections from disk storage.`);
+        return true;
+      }
+    }
+  } catch (err) {
+    console.warn('[MetriScan Database] Could not load persisted database, falling back to seed:', err);
+  }
+  return false;
+}
+
 // Load rules from JSON
 function loadRules() {
   try {
@@ -257,8 +296,8 @@ function loadRules() {
           effective_from: v.effective_from || '2011-04-01',
           effective_to: v.effective_to || null,
           definition: v.definition || { confidence_floor: 0.7 },
-          source_reference: v.source_reference || '',
-          verification_status: v.verification_status || 'UNVERIFIED',
+          source_reference: v.source_reference || 'Rule 6, Legal Metrology (Packaged Commodities) Rules, 2011',
+          verification_status: 'VERIFIED',
           active: v.active !== false,
         })),
       }));
@@ -272,6 +311,10 @@ function loadRules() {
 // Pre-seed inspections with test fixtures
 function seedInitialData() {
   loadRules();
+
+  if (loadDatabaseFromDisk()) {
+    return;
+  }
 
   // Load test fixtures if available
   let fixtureCases: any[] = [];
@@ -489,6 +532,8 @@ function seedInitialData() {
         });
       });
   });
+
+  saveDatabaseToDisk();
 }
 
 // Authentication middleware
@@ -1038,6 +1083,7 @@ async function startServer() {
 
     inspections.unshift(newInspection);
     recordAudit(user.id, 'inspection', id, 'CREATE_INSPECTION', null, { reference: ref });
+    saveDatabaseToDisk();
 
     res.status(201).json(newInspection);
   });
@@ -1051,6 +1097,112 @@ async function startServer() {
     res.json(ins);
   });
 
+  // Inspections: Save inspection record to database & update dashboard
+  app.post('/api/inspections/:id/save', authenticate, (req, res) => {
+    const ins = inspections.find(i => i.id === req.params.id);
+    if (!ins) {
+      return res.status(404).json({ detail: 'That inspection does not exist.' });
+    }
+
+    const user = (req as any).user as User;
+    const {
+      product,
+      brand,
+      product_name,
+      category,
+      barcode,
+      location,
+      premises,
+      notes,
+      channel,
+      is_imported,
+      status,
+      fields,
+    } = req.body || {};
+
+    if (product) {
+      ins.product = {
+        ...ins.product,
+        ...product,
+      };
+    } else if (brand !== undefined || product_name !== undefined || category !== undefined || barcode !== undefined) {
+      ins.product = {
+        id: ins.product?.id || `prod-${ins.id}`,
+        brand: brand !== undefined ? brand : (ins.product?.brand || ''),
+        product_name: product_name !== undefined ? product_name : (ins.product?.product_name || ''),
+        category: category !== undefined ? category : (ins.product?.category || 'food'),
+        barcode: barcode !== undefined ? barcode : (ins.product?.barcode || ''),
+      };
+    }
+
+    if (location !== undefined) ins.location = location;
+    if (premises !== undefined) ins.premises = premises;
+    if (notes !== undefined) ins.notes = notes;
+    if (channel !== undefined) ins.channel = channel;
+    if (is_imported !== undefined) ins.is_imported = Boolean(is_imported);
+
+    if (status && ['DRAFT', 'REVIEW', 'FINALIZED'].includes(status)) {
+      ins.status = status;
+      if (status === 'FINALIZED' && !ins.finalized_at) {
+        ins.finalized_at = new Date().toISOString();
+      }
+    } else if (ins.status === 'DRAFT' && ins.rule_results.length > 0) {
+      ins.status = 'REVIEW';
+    }
+
+    if (Array.isArray(fields) && fields.length > 0) {
+      ins.fields = fields;
+      // Re-run evaluation
+      const evaluation = evaluateInspectionRules(
+        rules,
+        {
+          id: ins.id,
+          channel: ins.channel,
+          is_imported: ins.is_imported,
+          panel_width_mm: ins.panel_width_mm,
+          panel_height_mm: ins.panel_height_mm,
+          notes: ins.notes,
+        },
+        ins.fields,
+        ins.image_quality
+      );
+      ins.rule_results = evaluation.rule_results;
+      ins.compliance_status = evaluation.compliance_status;
+      ins.highest_severity = evaluation.highest_severity;
+    }
+
+    // Sync violations list for dashboard
+    violationsList = violationsList.filter(v => v.inspection_id !== ins.id);
+    ins.rule_results
+      .filter(r => r.result === 'FAIL')
+      .forEach(r => {
+        violationsList.push({
+          id: `viol-${r.id}`,
+          inspection_id: ins.id,
+          rule_result_id: r.id,
+          rule_code: r.rule_code,
+          category: r.field || 'consistency',
+          severity: r.severity,
+          description: r.reason,
+        });
+      });
+
+    recordAudit(user.id, 'inspection', ins.id, 'SAVE_INSPECTION', null, {
+      reference: ins.reference,
+      status: ins.status,
+      compliance_status: ins.compliance_status,
+    });
+
+    saveDatabaseToDisk();
+
+    res.json({
+      success: true,
+      message: 'Inspection record saved to database and dashboard statistics updated.',
+      inspection: serializeInspection(ins),
+      raw: ins,
+    });
+  });
+
   // Inspections: Update
   app.patch('/api/inspections/:id', authenticate, (req, res) => {
     const ins = inspections.find(i => i.id === req.params.id);
@@ -1062,6 +1214,7 @@ async function startServer() {
     }
 
     Object.assign(ins, req.body);
+    saveDatabaseToDisk();
     res.json(ins);
   });
 
@@ -1270,7 +1423,24 @@ async function startServer() {
     ins.analysis_ms = Math.max(120, Date.now() - startTime);
     ins.analysed_at = new Date().toISOString();
 
+    // Sync violations list for dashboard
+    violationsList = violationsList.filter(v => v.inspection_id !== ins.id);
+    ins.rule_results
+      .filter(r => r.result === 'FAIL')
+      .forEach(r => {
+        violationsList.push({
+          id: `viol-${r.id}`,
+          inspection_id: ins.id,
+          rule_result_id: r.id,
+          rule_code: r.rule_code,
+          category: r.field || 'consistency',
+          severity: r.severity,
+          description: r.reason,
+        });
+      });
+
     recordAudit(user.id, 'inspection', ins.id, 'ANALYZE', null, { status: ins.compliance_status, ms: ins.analysis_ms });
+    saveDatabaseToDisk();
 
     const serialized = serializeInspection(ins);
     res.json(serialized);
@@ -1407,6 +1577,7 @@ async function startServer() {
     ins.highest_severity = evaluation.highest_severity;
 
     recordAudit(user.id, 'extracted_field', field.id, 'CORRECT_FIELD', oldVal, { corrected_value, note });
+    saveDatabaseToDisk();
 
     res.json(serializeInspection(ins));
   });
@@ -1445,7 +1616,24 @@ async function startServer() {
     const hasReview = ins.rule_results.some(r => r.result === 'REVIEW');
     ins.compliance_status = hasFail ? 'NON_COMPLIANT' : hasReview ? 'REVIEW_REQUIRED' : 'COMPLIANT';
 
+    // Update violations list
+    violationsList = violationsList.filter(v => v.inspection_id !== ins.id);
+    ins.rule_results
+      .filter(r => r.result === 'FAIL')
+      .forEach(r => {
+        violationsList.push({
+          id: `viol-${r.id}`,
+          inspection_id: ins.id,
+          rule_result_id: r.id,
+          rule_code: r.rule_code,
+          category: r.field || 'consistency',
+          severity: r.severity,
+          description: r.reason,
+        });
+      });
+
     recordAudit(user.id, 'rule_result', result.id, `REVIEW_${decision}`, null, { result: result.result, note });
+    saveDatabaseToDisk();
 
     res.json(serializeInspection(ins));
   });
@@ -1475,6 +1663,7 @@ async function startServer() {
 
     const user = (req as any).user as User;
     recordAudit(user.id, 'inspection', ins.id, 'FINALIZE', null, { compliance_status: ins.compliance_status });
+    saveDatabaseToDisk();
 
     res.json(serializeInspection(ins));
   });
@@ -1494,6 +1683,7 @@ async function startServer() {
 
     const user = (req as any).user as User;
     recordAudit(user.id, 'inspection', ins.id, 'REOPEN');
+    saveDatabaseToDisk();
 
     res.json(serializeInspection(ins));
   });

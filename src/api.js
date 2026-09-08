@@ -54,6 +54,7 @@ export const api = {
       Object.entries(params).filter(([, v]) => v !== '' && v != null))),
   getInspection: (id) => request(`/api/inspections/${id}`),
   updateInspection: (id, body) => request(`/api/inspections/${id}`, { method: 'PATCH', body }),
+  saveInspection: (id, body = {}) => request(`/api/inspections/${id}/save`, { method: 'POST', body }),
   uploadImage: (id, file, imageType) => {
     const form = new FormData()
     form.append('file', file)

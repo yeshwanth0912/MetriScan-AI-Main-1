@@ -22,7 +22,8 @@ import {
   Package,
   Layers,
   Sparkles,
-  ShieldCheck
+  ShieldCheck,
+  RotateCw
 } from 'lucide-react'
 import { api } from '../api.js'
 import StatusBadge from '../components/StatusBadge.jsx'
@@ -99,14 +100,30 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [data, setData] = useState({ summary: null, violations: [], queue: [] })
   const [error, setError] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+
+  const loadDashboardData = async () => {
+    setRefreshing(true)
+    setError('')
+    try {
+      const [summary, violations, queue] = await Promise.all([
+        api.summary(),
+        api.topViolations(),
+        api.reviewQueue()
+      ])
+      setData({ summary, violations, queue })
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
-    Promise.all([api.summary(), api.topViolations(), api.reviewQueue()])
-      .then(([summary, violations, queue]) => setData({ summary, violations, queue }))
-      .catch((e) => setError(e.message))
+    loadDashboardData()
   }, [])
 
-  if (error) return <div className="panel p-4 text-fail">{error}</div>
+  if (error && !data.summary) return <div className="panel p-4 text-fail">{error}</div>
   if (!data.summary) {
     return (
       <div className="panel p-12 text-center">
@@ -145,6 +162,16 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0 relative z-10">
+          <button
+            onClick={loadDashboardData}
+            disabled={refreshing}
+            className="px-3 py-2 text-xs font-medium bg-slate-800/80 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition-colors flex items-center gap-1.5 shadow-sm"
+            title="Refresh dashboard stats from database"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-cyan-400' : 'text-slate-300'}`} />
+            <span>{refreshing ? 'Refreshing…' : 'Sync Data'}</span>
+          </button>
+
           <ShinyButton
             onClick={() => navigate('/inspections/new')}
             className="!py-2 !px-4 !text-xs !shadow-lg"

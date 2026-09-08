@@ -22,7 +22,10 @@ import {
   Upload,
   Image as ImageIcon,
   Camera,
-  Scan
+  Scan,
+  Save,
+  Database,
+  CheckCircle
 } from 'lucide-react'
 import { api, downloadFile } from '../api.js'
 import { useAuth } from '../auth.jsx'
@@ -84,6 +87,7 @@ export default function InspectionDetail() {
   const [modalFinding, setModalFinding] = useState(null)
   const [overrideDecision, setOverrideDecision] = useState('PASS')
   const [overrideNote, setOverrideNote] = useState('')
+  const [saveNotice, setSaveNotice] = useState(null)
 
   const load = useCallback(async () => {
     const [ins, res, reps] = await Promise.all([
@@ -211,6 +215,33 @@ export default function InspectionDetail() {
     }
   }
 
+  const handleSaveInspection = async () => {
+    setBusy('Saving inspection data to database…')
+    setError('')
+    try {
+      await api.saveInspection(id, {
+        product: inspection.product,
+        location: inspection.location,
+        premises: inspection.premises,
+        notes: inspection.notes,
+        channel: inspection.channel,
+        is_imported: inspection.is_imported,
+      })
+      await load()
+      setSaveNotice({
+        time: new Date().toLocaleTimeString(),
+        message: 'Inspection dossier successfully saved to database & updated on Dashboard.'
+      })
+      setTimeout(() => {
+        setSaveNotice(null)
+      }, 7000)
+    } catch (err) {
+      setError('Failed to save inspection: ' + (err.message || 'Database error'))
+    } finally {
+      setBusy('')
+    }
+  }
+
   if (error && !inspection) {
     return (
       <div className="panel p-6 text-center text-red-700 bg-red-50 border-red-200">
@@ -263,6 +294,17 @@ export default function InspectionDetail() {
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Save to Database button */}
+          <button
+            className="btn-secondary !bg-indigo-50 !text-indigo-700 !border-indigo-200 hover:!bg-indigo-100 flex items-center gap-1.5"
+            disabled={!!busy}
+            onClick={handleSaveInspection}
+            title="Save inspection state and findings into database"
+          >
+            <Save className={`w-3.5 h-3.5 ${busy.startsWith('Saving') ? 'animate-pulse' : ''}`} />
+            <span>{busy.startsWith('Saving') ? 'Saving…' : 'Save to Database'}</span>
+          </button>
+
           <button
             className="btn-ghost"
             disabled={!!busy || finalized}
@@ -319,6 +361,38 @@ export default function InspectionDetail() {
           )}
         </div>
       </section>
+
+      {/* Save Success Notice Banner */}
+      {saveNotice && (
+        <div className="panel px-4 py-3 bg-emerald-50/90 border-emerald-300 text-emerald-900 flex items-center justify-between shadow-xs transition-all">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+            <div>
+              <p className="text-xs font-semibold text-emerald-800">
+                {saveNotice.message}
+              </p>
+              <p className="text-[11px] text-emerald-600">
+                Timestamp: {saveNotice.time} · Persisted securely to disk & live sync enabled.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/dashboard"
+              className="px-2.5 py-1 text-xs font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-2xs transition-colors flex items-center gap-1"
+            >
+              <span>View in Dashboard</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
+            <button
+              onClick={() => setSaveNotice(null)}
+              className="text-xs text-emerald-700 hover:text-emerald-900 px-1.5 py-0.5"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Metrics Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">

@@ -59,7 +59,7 @@ export async function verifyAndInitGeminiOperational(genAI: any): Promise<boolea
     return false;
   }
 
-  const pingModels = ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+  const pingModels = ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
   for (const model of pingModels) {
     try {
       await genAI.models.generateContent({
@@ -70,7 +70,7 @@ export async function verifyAndInitGeminiOperational(genAI: any): Promise<boolea
       console.log(`[MetriScan Vision] Cloud AI Vision model (${model}) verified operational.`);
       return true;
     } catch (err: any) {
-      // try next model
+      // try next candidate model
     }
   }
 
@@ -211,8 +211,8 @@ export async function extractDeclarationsWithVision(
     return await extractWithLocalOcr(images, inspectionId, isImported, baseQuality, context);
   }
 
-  // Candidate vision models in order of availability and speed
-  const CANDIDATE_MODELS = ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+  // Candidate vision models in order of availability, speed, and multimodality
+  const CANDIDATE_MODELS = ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
 
   function cleanJsonText(raw: string): string {
     let s = raw.trim();
@@ -525,7 +525,7 @@ export async function extractSingleImageOcr(
     return await extractLocalSingleImageOcr(processedBuffer, mimetype, quality, panelType);
   }
 
-  const CANDIDATE_MODELS = ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+  const CANDIDATE_MODELS = ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
 
   const prompt = `You are an automated OCR and Legal Metrology packaging scanner.
 Carefully read ALL text visible in this ${panelType} packaging label image.
