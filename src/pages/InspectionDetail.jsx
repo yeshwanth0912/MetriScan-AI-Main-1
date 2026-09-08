@@ -20,12 +20,15 @@ import {
   ChevronRight,
   Info,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Camera,
+  Scan
 } from 'lucide-react'
 import { api, downloadFile } from '../api.js'
 import { useAuth } from '../auth.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import EvidenceViewer from '../components/EvidenceViewer.jsx'
+import LiveScannerModal from '../components/LiveScannerModal.jsx'
 
 const FIELD_LABELS = {
   commodity_name: 'Name of commodity',
@@ -69,6 +72,10 @@ export default function InspectionDetail() {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [blocking, setBlocking] = useState([])
+
+  // Live Camera Scanner state
+  const [showScannerModal, setShowScannerModal] = useState(false)
+  const [scannerPanel, setScannerPanel] = useState('back')
 
   // In-app reviewer override modal state
   const [modalFinding, setModalFinding] = useState(null)
@@ -144,6 +151,24 @@ export default function InspectionDetail() {
     }
   }
 
+  const handleScannerCapture = async ({ file, panel }) => {
+    setBusy(`Uploading scanned ${panel} panel & re-running optical AI analysis...`)
+    setError('')
+    try {
+      await api.uploadImage(id, file, panel)
+      await api.analyze(id)
+      await load()
+      if (selected) {
+        const fresh = await api.evidence(id, selected)
+        setEvidence(fresh)
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy('')
+    }
+  }
+
   if (error && !inspection) {
     return (
       <div className="panel p-6 text-center text-red-700 bg-red-50 border-red-200">
@@ -196,6 +221,19 @@ export default function InspectionDetail() {
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            className="btn-ghost"
+            disabled={!!busy || finalized}
+            onClick={() => {
+              setScannerPanel('back')
+              setShowScannerModal(true)
+            }}
+            title="Open Live Packaging Scanner"
+          >
+            <Scan className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Open Scanner</span>
+          </button>
+
           <button
             className="btn-ghost"
             disabled={!!busy || finalized}
@@ -289,6 +327,62 @@ export default function InspectionDetail() {
         </div>
       )}
 
+      {/* Scan Reliability & Re-upload Notification Card */}
+      {Boolean(
+        results.image_quality && (
+          results.image_quality.status === 'UNREADABLE' ||
+          results.image_quality.status === 'POOR' ||
+          results.image_quality.status === 'VERY_POOR' ||
+          results.image_quality.can_proceed === false ||
+          (results.fields?.filter(f => f.present).length === 0 && (inspection.images || []).length > 0)
+        )
+      ) && (
+        <section className="p-4 rounded-xl border-2 border-amber-300 bg-gradient-to-r from-amber-50 to-orange-50 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-amber-100 text-amber-800 border border-amber-300 shrink-0 mt-0.5">
+                <Camera className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wide flex items-center gap-1.5">
+                  <span>Scanner Could Not Read Packaging Text Clearly</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-200 text-amber-900 font-mono">
+                    Re-upload Recommended
+                  </span>
+                </h4>
+                <p className="text-xs text-amber-900 mt-1 max-w-2xl leading-relaxed">
+                  The scanner could not legibly read the packaging declarations (text appears blurry, low contrast, rotated sideways, or obscured by glare). Please upload a clearer, well-lit photo of the panel, or use the <strong>Live Camera Scanner</strong> to show details directly to the camera.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  setScannerPanel('back')
+                  setShowScannerModal(true)
+                }}
+                className="btn-primary !bg-indigo-600 hover:!bg-indigo-700 !text-xs !py-2 !px-3 flex items-center gap-1.5 shadow-sm font-semibold"
+              >
+                <Scan className="w-4 h-4" />
+                <span>Open Live Scanner</span>
+              </button>
+
+              <label className="btn-secondary !text-xs !py-2 !px-3 cursor-pointer flex items-center gap-1.5 bg-white border-amber-300 text-amber-900 hover:bg-amber-100 font-medium">
+                <Upload className="w-4 h-4 text-amber-700" />
+                <span>Upload Clearer Photo</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handlePhotoUpload(e, 'back')}
+                />
+              </label>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Blocking Issues Alert */}
       {blocking.length > 0 && !finalized && (
         <section className="p-3.5 rounded-xl border border-amber-200 bg-amber-50/80 shadow-subtle">
@@ -301,6 +395,85 @@ export default function InspectionDetail() {
               <li key={i}>{issue}</li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {/* Image Quality & Optical Integrity Assessment */}
+      {results.image_quality && (
+        <section className="panel p-3.5 bg-white border-slate-200 shadow-subtle">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-2.5">
+            <div className="flex items-center gap-2">
+              <div
+                className={`p-1.5 rounded-lg border ${
+                  results.image_quality.status === 'EXCELLENT' || results.image_quality.status === 'GOOD'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : results.image_quality.status === 'FAIR'
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-red-50 text-red-700 border-red-200'
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-800 flex flex-wrap items-center gap-2">
+                  <span>Image Quality & Optical Assessment</span>
+                  <span
+                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-semibold border ${
+                      results.image_quality.status === 'EXCELLENT' || results.image_quality.status === 'GOOD'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : results.image_quality.status === 'FAIR'
+                        ? 'bg-amber-50 text-amber-800 border-amber-300'
+                        : 'bg-red-50 text-red-800 border-red-300'
+                    }`}
+                  >
+                    {results.image_quality.status} ({results.image_quality.score}/100)
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    Confidence Factor: &times;{results.image_quality.factor?.toFixed(2)}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {results.image_quality.summary || 'Photographs evaluated for resolution, sharpness, lighting, and framing.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Quality metric tags */}
+            {results.image_quality.metrics && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-700 font-mono">
+                  Resolution: <strong>{results.image_quality.metrics.resolution}</strong>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-700 font-mono">
+                  Sharpness: <strong>{results.image_quality.metrics.sharpness}</strong>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-700 font-mono">
+                  Lighting: <strong>{results.image_quality.metrics.lighting}</strong>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-700 font-mono">
+                  Framing: <strong>{results.image_quality.metrics.framing}</strong>
+                </span>
+              </div>
+            )}
+          </div>
+
+          {results.image_quality.issues?.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5 text-2xs text-amber-800">
+              <span className="font-semibold">Detected Optical Observations:</span>
+              {results.image_quality.issues.map((iss, i) => (
+                <span key={i} className="px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200">
+                  {iss}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {results.image_quality.warning && (
+            <div className="mt-2 p-2 rounded bg-amber-50/80 border border-amber-200 text-xs text-amber-900 flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>{results.image_quality.warning}</span>
+            </div>
+          )}
         </section>
       )}
 
@@ -325,6 +498,17 @@ export default function InspectionDetail() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setScannerPanel('back')
+                setShowScannerModal(true)
+              }}
+              disabled={!!busy || finalized}
+              className="btn-ghost !text-2xs !py-1.5 !px-2.5 hover:bg-indigo-50 flex items-center gap-1.5 text-indigo-700 border-indigo-200 bg-indigo-50/50"
+            >
+              <Scan className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Open Live Scanner</span>
+            </button>
             <label className="btn-ghost !text-2xs !py-1.5 !px-2.5 cursor-pointer hover:bg-slate-100 flex items-center gap-1.5 text-slate-700 border-slate-300">
               <Upload className="w-3.5 h-3.5 text-indigo-600" />
               <span>Upload 2nd Image (Back Panel)</span>
@@ -844,6 +1028,15 @@ export default function InspectionDetail() {
           </div>
         </div>
       )}
+
+      {/* Live Camera Packaging Scanner Modal */}
+      <LiveScannerModal
+        isOpen={showScannerModal}
+        onClose={() => setShowScannerModal(false)}
+        onCapture={handleScannerCapture}
+        defaultPanel={scannerPanel}
+        productName={inspection?.product_name}
+      />
     </div>
   )
 }

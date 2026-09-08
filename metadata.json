@@ -1,6 +1,8 @@
 {
   "name": "MetriScan AI Inspector",
   "description": "AI-assisted compliance verification for packaged commodities under Legal Metrology Rules",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "camera"
+  ],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

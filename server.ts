@@ -6,6 +6,11 @@ import { createServer as createViteServer } from 'vite';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import { GoogleGenAI } from '@google/genai';
+import { assessImageQuality, inspectImageBuffer, QUALITY_FACTORS } from './server/quality';
+import type { ImageQualityAssessment } from './server/quality';
+import { evaluateInspectionRules } from './server/rules-engine';
+import { extractDeclarationsWithVision, extractFromListingText, extractSingleImageOcr } from './server/extractor';
+import type { ImageInput } from './server/extractor';
 
 const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'metriscan-secret-key-2026';
@@ -126,31 +131,8 @@ interface Report {
   json_path: string;
 }
 
-export interface ImageQualityAssessment {
-  status: 'GOOD' | 'ACCEPTABLE' | 'POOR' | 'VERY_POOR';
-  score: number;
-  factor: number;
-  issues: string[];
-  metrics: {
-    resolution: 'HIGH' | 'MEDIUM' | 'LOW';
-    sharpness: 'SHARP' | 'ACCEPTABLE' | 'BLURRY';
-    lighting: 'BALANCED' | 'DARK' | 'BRIGHT_GLARE';
-    framing: 'CLEAR' | 'CROPPED' | 'OBSTRUCTED';
-  };
-  warning: string | null;
-  model_confidence: number;
-  adjusted_confidence: number;
-  can_proceed: boolean;
-  summary: string;
-  assessed_at: string;
-}
-
-export const IMAGE_QUALITY_FACTORS: Record<string, number> = {
-  GOOD: 1.00,
-  ACCEPTABLE: 0.85,
-  POOR: 0.60,
-  VERY_POOR: 0.40,
-};
+export { ImageQualityAssessment };
+export const IMAGE_QUALITY_FACTORS = QUALITY_FACTORS;
 
 interface Inspection {
   id: string;
@@ -322,345 +304,103 @@ function seedInitialData() {
     const careBlock = findBlock(b => /consumer care|toll free/i.test(b.text));
     const originBlock = findBlock(b => /country of origin|made in/i.test(b.text));
 
+    const isBlurCase = c.id.includes('blur') || c.id.includes('poor');
+    const isGlareCase = c.id.includes('glare');
+    const imageQuality: ImageQualityAssessment = {
+      status: isBlurCase ? 'POOR' : isGlareCase ? 'ACCEPTABLE' : 'GOOD',
+      score: isBlurCase ? 58 : isGlareCase ? 74 : 94,
+      factor: isBlurCase ? 0.60 : isGlareCase ? 0.85 : 1.00,
+      issues: isBlurCase
+        ? ['Optical motion blur detected on back panel declarations']
+        : isGlareCase
+        ? ['Surface specular glare detected on laminate packaging']
+        : [],
+      metrics: {
+        resolution: 'HIGH',
+        sharpness: isBlurCase ? 'BLURRY' : 'SHARP',
+        lighting: isGlareCase ? 'BRIGHT_GLARE' : 'BALANCED',
+        framing: 'CLEAR',
+      },
+      warning: isBlurCase ? 'Degraded image sharpness reduces declaration confidence; manual officer verification required.' : null,
+      model_confidence: 94,
+      adjusted_confidence: isBlurCase ? 56 : isGlareCase ? 80 : 94,
+      can_proceed: true,
+      summary: isBlurCase
+        ? 'Degraded image clarity. Statutory declarations must be manually confirmed on the physical pack.'
+        : 'Packaging photograph meets regulatory clarity standards for statutory audit.',
+      assessed_at: new Date().toISOString(),
+    };
+
     const fieldsDef = [
-      { name: 'commodity_name', block: nameBlock, defVal: 'Sweet biscuits' },
-      { name: 'net_quantity', block: qtyBlock, defVal: '500 g' },
-      { name: 'mrp', block: mrpBlock, defVal: 'Rs. 120.00' },
-      { name: 'manufacturer', block: mfgBlock, defVal: 'Crispo Foods Pvt Ltd, Hyderabad 500055' },
-      { name: 'date_of_manufacture', block: dateBlock, defVal: '06/2026' },
-      { name: 'consumer_care', block: careBlock, defVal: 'care@crispofoods.in' },
-      ...(isImported ? [{ name: 'country_of_origin', block: originBlock, defVal: '' }] : []),
+      { name: 'commodity_name', block: nameBlock },
+      { name: 'net_quantity', block: qtyBlock },
+      { name: 'mrp', block: mrpBlock },
+      { name: 'manufacturer', block: mfgBlock },
+      { name: 'date_of_manufacture', block: dateBlock },
+      { name: 'consumer_care', block: careBlock },
+      ...(isImported ? [{ name: 'country_of_origin', block: originBlock }] : []),
     ];
 
     fieldsDef.forEach(fd => {
       const blk = fd.block;
-      const isPresent = Boolean(blk);
-      const val = blk ? blk.text : '';
-      const conf = blk ? blk.confidence : 0;
+      const isPresent = Boolean(blk && blk.text && blk.text.trim());
+      const val = isPresent ? blk.text.trim() : null;
+      const conf = isPresent ? (blk.confidence || 0.95) : 0;
+
+      let measurement: any = {
+        status: 'UNAVAILABLE',
+        height_mm: null,
+        detail: 'Panel scale not calibrated',
+      };
+      if (isPresent && blk?.bbox && Array.isArray(blk.bbox) && blk.bbox.length === 4) {
+        const hPx = Math.abs(blk.bbox[3] - blk.bbox[1]);
+        const estMm = Math.round(((hPx / 1600) * 160) * 10) / 10;
+        if (estMm > 0.5 && estMm < 20) {
+          measurement = {
+            status: 'MEASURED',
+            height_mm: estMm,
+            confidence: conf,
+            detail: 'Calibrated from 120x160mm panel dimensions',
+          };
+        }
+      }
+
       extractedFields.push({
         id: `f-${c.id}-${fd.name}`,
         inspection_id: `ins-${index + 1}`,
         field_name: fd.name,
         present: isPresent,
-        raw_value: isPresent ? val : null,
+        raw_value: val,
         corrected_value: null,
-        effective_value: isPresent ? val : null,
+        effective_value: val,
         normalized: isPresent ? { raw: val } : null,
         confidence: conf,
-        panel: blk?.panel || 'principal',
-        evidence: blk ? { image_id: blk.image_id || 'img-front', bbox: blk.bbox } : null,
-        measurement: { status: 'MEASURED', height_mm: 3.2, confidence: 0.95 },
-        notes: [],
-        verification_status: conf < 0.7 && isPresent ? 'LOW_CONFIDENCE' : 'DETECTED',
+        panel: blk?.panel || (fd.name === 'commodity_name' || fd.name === 'net_quantity' ? 'principal' : 'back'),
+        evidence: isPresent && blk?.bbox ? { image_id: blk.image_id || 'img-front', bbox: blk.bbox } : null,
+        measurement,
+        notes: isPresent ? [] : [`Statutory declaration "${fd.name}" was not detected on this packaging sample.`],
+        verification_status: !isPresent ? 'LOW_CONFIDENCE' : conf * imageQuality.factor < 0.70 ? 'LOW_CONFIDENCE' : 'DETECTED',
       });
     });
 
-    // Evaluate rule results
-    const ruleResults: RuleResult[] = [];
-    rules.forEach(rule => {
-      const activeVer = rule.versions.find(v => v.active) || rule.versions[0];
-      if (!activeVer) return;
+    // Evaluate rule results deterministically
+    const evaluation = evaluateInspectionRules(
+      rules,
+      {
+        id: `ins-${index + 1}`,
+        channel: 'retail',
+        is_imported: isImported,
+        panel_width_mm: 120,
+        panel_height_mm: 160,
+        notes: c.description,
+      },
+      extractedFields,
+      imageQuality
+    );
 
-      // Check applicability
-      if (rule.applicability?.imported_only && !isImported) {
-        ruleResults.push({
-          id: `res-${c.id}-${rule.code}`,
-          inspection_id: `ins-${index + 1}`,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: activeVer.version,
-          rule_version_id: activeVer.id,
-          title: rule.title,
-          field: rule.field,
-          result: 'NOT_APPLICABLE',
-          severity: rule.severity,
-          reason: 'Pack is domestic; import rules do not apply.',
-          source_reference: activeVer.source_reference,
-          verification_status: activeVer.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-        return;
-      }
-
-      if (rule.applicability?.channels && !rule.applicability.channels.includes('retail')) {
-        ruleResults.push({
-          id: `res-${c.id}-${rule.code}`,
-          inspection_id: `ins-${index + 1}`,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: activeVer.version,
-          rule_version_id: activeVer.id,
-          title: rule.title,
-          field: rule.field,
-          result: 'NOT_APPLICABLE',
-          severity: rule.severity,
-          reason: 'Applies only to specified sales channels.',
-          source_reference: activeVer.source_reference,
-          verification_status: activeVer.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-        return;
-      }
-
-      if (rule.requirement_type === 'presence' && rule.field) {
-        const matchingFld = extractedFields.find(f => f.field_name === rule.field);
-        if (!matchingFld || !matchingFld.present) {
-          ruleResults.push({
-            id: `res-${c.id}-${rule.code}`,
-            inspection_id: `ins-${index + 1}`,
-            rule_id: rule.id,
-            rule_code: rule.code,
-            rule_version: activeVer.version,
-            rule_version_id: activeVer.id,
-            title: rule.title,
-            field: rule.field,
-            result: 'FAIL',
-            severity: rule.severity,
-            reason: `${rule.title} was not found on any submitted image.`,
-            source_reference: activeVer.source_reference,
-            verification_status: activeVer.verification_status,
-            reviewer_status: 'MACHINE',
-            reviewer_note: '',
-          });
-        } else if (matchingFld.confidence < (activeVer.definition.confidence_floor || 0.70)) {
-          ruleResults.push({
-            id: `res-${c.id}-${rule.code}`,
-            inspection_id: `ins-${index + 1}`,
-            rule_id: rule.id,
-            rule_code: rule.code,
-            rule_version: activeVer.version,
-            rule_version_id: activeVer.id,
-            title: rule.title,
-            field: rule.field,
-            result: 'REVIEW',
-            severity: rule.severity,
-            reason: `Read at ${Math.round(matchingFld.confidence * 100)}% confidence, below the 70% threshold. Confirm the value before finalising.`,
-            evidence: matchingFld.evidence,
-            source_reference: activeVer.source_reference,
-            verification_status: activeVer.verification_status,
-            reviewer_status: 'MACHINE',
-            reviewer_note: '',
-          });
-        } else {
-          ruleResults.push({
-            id: `res-${c.id}-${rule.code}`,
-            inspection_id: `ins-${index + 1}`,
-            rule_id: rule.id,
-            rule_code: rule.code,
-            rule_version: activeVer.version,
-            rule_version_id: activeVer.id,
-            title: rule.title,
-            field: rule.field,
-            result: 'PASS',
-            severity: rule.severity,
-            reason: `${rule.title} is present: "${matchingFld.raw_value}".`,
-            evidence: matchingFld.evidence,
-            source_reference: activeVer.source_reference,
-            verification_status: activeVer.verification_status,
-            reviewer_status: 'MACHINE',
-            reviewer_note: '',
-          });
-        }
-      } else if (rule.requirement_type === 'format') {
-        const matchingFld = extractedFields.find(f => f.field_name === rule.field);
-        if (!matchingFld || !matchingFld.present) {
-          ruleResults.push({
-            id: `res-${c.id}-${rule.code}`,
-            inspection_id: `ins-${index + 1}`,
-            rule_id: rule.id,
-            rule_code: rule.code,
-            rule_version: activeVer.version,
-            rule_version_id: activeVer.id,
-            title: rule.title,
-            field: rule.field,
-            result: 'NOT_APPLICABLE',
-            severity: rule.severity,
-            reason: 'Field is absent; the presence rule reports this separately.',
-            source_reference: activeVer.source_reference,
-            verification_status: activeVer.verification_status,
-            reviewer_status: 'MACHINE',
-            reviewer_note: '',
-          });
-        } else {
-          ruleResults.push({
-            id: `res-${c.id}-${rule.code}`,
-            inspection_id: `ins-${index + 1}`,
-            rule_id: rule.id,
-            rule_code: rule.code,
-            rule_version: activeVer.version,
-            rule_version_id: activeVer.id,
-            title: rule.title,
-            field: rule.field,
-            result: 'PASS',
-            severity: rule.severity,
-            reason: 'Declared in the required form.',
-            evidence: matchingFld.evidence,
-            source_reference: activeVer.source_reference,
-            verification_status: activeVer.verification_status,
-            reviewer_status: 'MACHINE',
-            reviewer_note: '',
-          });
-        }
-      } else if (rule.requirement_type === 'placement') {
-        const matchingFld = extractedFields.find(f => f.field_name === rule.field);
-        if (!matchingFld || !matchingFld.present) {
-          ruleResults.push({
-            id: `res-${c.id}-${rule.code}`,
-            inspection_id: `ins-${index + 1}`,
-            rule_id: rule.id,
-            rule_code: rule.code,
-            rule_version: activeVer.version,
-            rule_version_id: activeVer.id,
-            title: rule.title,
-            field: rule.field,
-            result: 'NOT_APPLICABLE',
-            severity: rule.severity,
-            reason: 'Field is absent; placement cannot be assessed.',
-            source_reference: activeVer.source_reference,
-            verification_status: activeVer.verification_status,
-            reviewer_status: 'MACHINE',
-            reviewer_note: '',
-          });
-        } else if (c.id === 'quantity-not-on-principal-panel' || matchingFld.panel !== 'principal') {
-          ruleResults.push({
-            id: `res-${c.id}-${rule.code}`,
-            inspection_id: `ins-${index + 1}`,
-            rule_id: rule.id,
-            rule_code: rule.code,
-            rule_version: activeVer.version,
-            rule_version_id: activeVer.id,
-            title: rule.title,
-            field: rule.field,
-            result: 'FAIL',
-            severity: rule.severity,
-            reason: `Found on the ${matchingFld.panel || 'back'} panel, but this declaration is required on the principal display panel.`,
-            evidence: matchingFld.evidence,
-            source_reference: activeVer.source_reference,
-            verification_status: activeVer.verification_status,
-            reviewer_status: 'MACHINE',
-            reviewer_note: '',
-          });
-        } else {
-          ruleResults.push({
-            id: `res-${c.id}-${rule.code}`,
-            inspection_id: `ins-${index + 1}`,
-            rule_id: rule.id,
-            rule_code: rule.code,
-            rule_version: activeVer.version,
-            rule_version_id: activeVer.id,
-            title: rule.title,
-            field: rule.field,
-            result: 'PASS',
-            severity: rule.severity,
-            reason: `${rule.title} appears on the principal display panel.`,
-            evidence: matchingFld.evidence,
-            source_reference: activeVer.source_reference,
-            verification_status: activeVer.verification_status,
-            reviewer_status: 'MACHINE',
-            reviewer_note: '',
-          });
-        }
-      } else if (rule.requirement_type === 'character_height') {
-        const matchingFld = extractedFields.find(f => f.field_name === rule.field);
-        ruleResults.push({
-          id: `res-${c.id}-${rule.code}`,
-          inspection_id: `ins-${index + 1}`,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: activeVer.version,
-          rule_version_id: activeVer.id,
-          title: rule.title,
-          field: rule.field,
-          result: matchingFld && matchingFld.present ? 'PASS' : 'NOT_APPLICABLE',
-          severity: rule.severity,
-          reason: matchingFld && matchingFld.present
-            ? 'Measured 3.20 mm against a 2.00 mm minimum for a 192.0 cm² panel.'
-            : 'Field is absent; height cannot be measured.',
-          evidence: matchingFld?.evidence,
-          source_reference: activeVer.source_reference,
-          verification_status: activeVer.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-      } else if (rule.code === 'LM-C-001') {
-        // mrp matches unit sale price
-        const isMisleading = c.id === 'misleading-unit-price';
-        const hasUsp = c.blocks?.some((b: any) => /unit sale price/i.test(b.text));
-        ruleResults.push({
-          id: `res-${c.id}-${rule.code}`,
-          inspection_id: `ins-${index + 1}`,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: activeVer.version,
-          rule_version_id: activeVer.id,
-          title: rule.title,
-          field: rule.field,
-          result: isMisleading ? 'FAIL' : hasUsp ? 'PASS' : 'NOT_APPLICABLE',
-          severity: rule.severity,
-          reason: isMisleading
-            ? 'Unit sale price implies Rs. 110.00 but declared MRP is Rs. 300.00.'
-            : hasUsp
-            ? 'Unit sale price consistent with declared MRP.'
-            : 'Unit sale price is not declared on this pack.',
-          source_reference: activeVer.source_reference,
-          verification_status: activeVer.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-      } else if (rule.code === 'LM-C-002') {
-        // best before follows mfg date
-        ruleResults.push({
-          id: `res-${c.id}-${rule.code}`,
-          inspection_id: `ins-${index + 1}`,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: activeVer.version,
-          rule_version_id: activeVer.id,
-          title: rule.title,
-          field: rule.field,
-          result: 'PASS',
-          severity: rule.severity,
-          reason: 'Best-before date follows the manufacturing date.',
-          source_reference: activeVer.source_reference,
-          verification_status: activeVer.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-      } else if (rule.code === 'LM-C-003') {
-        // Conflicting MRP
-        const isConflicting = c.id === 'conflicting-mrp';
-        ruleResults.push({
-          id: `res-${c.id}-${rule.code}`,
-          inspection_id: `ins-${index + 1}`,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: activeVer.version,
-          rule_version_id: activeVer.id,
-          title: rule.title,
-          field: rule.field,
-          result: isConflicting ? 'FAIL' : 'PASS',
-          severity: rule.severity,
-          reason: isConflicting
-            ? 'Conflicting MRP values detected across images: [120.0, 145.0].'
-            : 'A single MRP value appears across the submitted images.',
-          source_reference: activeVer.source_reference,
-          verification_status: activeVer.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-      }
-    });
-
-    const hasFail = ruleResults.some(r => r.result === 'FAIL');
-    const hasReview = ruleResults.some(r => r.result === 'REVIEW');
-    const compStatus = hasFail ? 'NON_COMPLIANT' : hasReview ? 'REVIEW_REQUIRED' : 'COMPLIANT';
-    const highestSev = hasFail
-      ? ruleResults.find(r => r.result === 'FAIL' && r.severity === 'CRITICAL')
-        ? 'CRITICAL'
-        : 'MAJOR'
-      : null;
+    const ruleResults: RuleResult[] = evaluation.rule_results;
+    const compStatus = evaluation.compliance_status;
+    const highestSev = evaluation.highest_severity;
 
     const ins: Inspection = {
       id: `ins-${index + 1}`,
@@ -711,6 +451,7 @@ function seedInitialData() {
       fields: extractedFields,
       rule_results: ruleResults,
       reports: [],
+      image_quality: imageQuality,
     };
 
     if (ins.status === 'FINALIZED') {
@@ -1400,411 +1141,126 @@ async function startServer() {
     const textSource = ins.listing_text || '';
     const isImported = ins.is_imported;
 
-    // Collect all uploaded images available for this inspection
+    // 1. Process uploaded packaging images or digital listing text
     const insStored = ins.images
       .map(img => storedImagesMap.get(img.id))
       .filter((s): s is StoredUploadedImage => Boolean(s && s.buffer));
 
-    let geminiExtracted: any = null;
+    let extractedFields: ExtractedField[] = [];
+    let imageQuality: ImageQualityAssessment | undefined = undefined;
 
     if (insStored.length > 0) {
-      const genAI = getGenAI();
-      if (genAI) {
-        try {
-          const imageParts = insStored.map(img => ({
-            inlineData: {
-              data: img.buffer.toString('base64'),
-              mimeType: img.mimetype || 'image/jpeg',
-            },
-          }));
+      const imagesInput: ImageInput[] = insStored.map((s, idx) => ({
+        id: s.id,
+        imageType: (ins.images.find(img => img.id === s.id)?.image_type || (idx === 0 ? 'front' : 'back')) as any,
+        buffer: s.buffer,
+        mimetype: s.mimetype,
+        fileName: s.fileName,
+      }));
 
-          const prompt = `You are an expert Legal Metrology (Packaged Commodities) Rules, 2011 regulatory inspector in India.
-Attached are ${insStored.length} photograph(s) of a packaged commodity product from a market inspection.
-Carefully examine ALL attached images, paying special attention to the 2nd image (or the back/side panel) where statutory declarations are printed (such as Net weight, MRP, PKD date, Use by date, Lot number, Manufacturer/Marketer address, and Consumer care contact details).
-
-Extract all mandatory declarations from the labels. Return exact, literal values printed on the packaging:
-1. commodity_name: Name of commodity (e.g., "Cake", "Proprietary Food (Cake - 7.2.1)", "Sweet Biscuits", etc.).
-2. net_quantity: Net quantity declared (e.g. "3 N x 40 g = 120 g" or "120 g"). Include number of units and unit weight if printed.
-3. mrp: Maximum Retail Price declared (e.g. "Rs. 80.00 (Rs. 0.67/g)" or "Rs. 80.00 (INCL. OF ALL TAXES)").
-4. unit_sale_price: Unit sale price if printed (e.g. "Rs. 0.67/g").
-5. manufacturer: Complete name and address of manufacturer / packer / marketer with city, state, and pin code (e.g. "Britannia Industries Ltd., 5/1 A Hungerford Street, Kolkata-700017, West Bengal" or "Delta Foods Pvt. Ltd., B-10, Bulandshahr Road Industrial Area, Ghaziabad, UP").
-6. date_of_manufacture: Month and year (or date) of manufacture or packing (e.g. "13/12/25" or "12/2025" or "PKD: 13/12/25").
-7. expiry_date: Best before or use by date (e.g. "11/05/26" or "USE BY: 11/05/26").
-8. consumer_care: Consumer care contact details including designation, phone/toll-free number, email, and address (e.g. "Executive, Consumer Care Cell, Ph: 1-800-4254449 / 1-800-30004530, feedback@britindia.com, Prestige Shantiniketan, Tower C, Whitefield, Bangalore-560048").
-9. country_of_origin: Country of origin (e.g. "India").
-10. brand: Brand name (e.g. "Britannia").
-11. product_name: Product name / description (e.g. "Cake").
-12. barcode: Barcode / GTIN numbers (e.g. "8901063363359").
-13. fssai_license: FSSAI License number (e.g. "10015043001129").
-14. lot_number: Lot / Batch number (e.g. "13225S2 05A").
-15. back_panel_image_index: 0-based index of the image containing the statutory back panel declaration table (typically 1 if 2 images are uploaded).
-
-Return JSON only conforming to:
-{
-  "commodity_name": string | null,
-  "net_quantity": string | null,
-  "mrp": string | null,
-  "unit_sale_price": string | null,
-  "manufacturer": string | null,
-  "date_of_manufacture": string | null,
-  "expiry_date": string | null,
-  "consumer_care": string | null,
-  "country_of_origin": string | null,
-  "brand": string | null,
-  "product_name": string | null,
-  "barcode": string | null,
-  "fssai_license": string | null,
-  "lot_number": string | null,
-  "back_panel_image_index": number
-}`;
-
-          const response = await genAI.models.generateContent({
-            model: 'gemini-3.8-flash',
-            contents: [...imageParts, prompt],
-            config: {
-              responseMimeType: 'application/json',
-              systemInstruction: 'You are an automated Legal Metrology inspection assistant in India. Extract packaging declarations faithfully and accurately from the image pixels.',
-            },
-          });
-
-          if (response.text) {
-            try {
-              geminiExtracted = JSON.parse(response.text);
-              console.log('[MetriScan] Successfully extracted declarations via Gemini Vision:', geminiExtracted);
-            } catch (parseErr) {
-              console.error('[MetriScan] Failed to parse Gemini response JSON:', parseErr);
-            }
-          }
-        } catch (visionErr) {
-          console.error('[MetriScan] Error invoking Gemini Vision:', visionErr);
+      const extraction = await extractDeclarationsWithVision(
+        getGenAI(),
+        imagesInput,
+        ins.id,
+        isImported,
+        {
+          productName: ins.product?.product_name,
+          brand: ins.product?.brand,
+          category: ins.product?.category,
+          panelWidthMm: ins.panel_width_mm,
+          panelHeightMm: ins.panel_height_mm,
         }
-      }
-    }
-
-    // Contextual fallback check
-    const isCakeOrBritannia = /cake/i.test(ins.product?.product_name || '') ||
-      /cake/i.test(ins.product?.brand || '') ||
-      /cake/i.test(textSource) ||
-      /britannia/i.test(ins.product?.brand || '') ||
-      /britannia/i.test(textSource);
-
-    // If Gemini extracted brand/product details, update inspection product info
-    if (geminiExtracted?.brand && ins.product) {
-      ins.product.brand = geminiExtracted.brand;
-    }
-    if (geminiExtracted?.product_name && ins.product) {
-      ins.product.product_name = geminiExtracted.product_name;
-    }
-    if (geminiExtracted?.barcode && ins.product) {
-      ins.product.barcode = geminiExtracted.barcode;
-    }
-
-    // Resolve extracted values prioritizing Gemini Vision, then listing text matches, then contextual fallback
-    const matchLine = (reg: RegExp) => {
-      const match = textSource.match(reg);
-      return match ? match[1]?.trim() || match[0].trim() : null;
-    };
-
-    const commName = geminiExtracted?.commodity_name ||
-      matchLine(/(?:commodity|name|title):\s*(.+)/i) ||
-      ins.product?.product_name ||
-      (isCakeOrBritannia ? 'Proprietary Food (Cake - 7.2.1)' : 'Packaged Commodity');
-
-    const netQty = geminiExtracted?.net_quantity ||
-      matchLine(/(?:net\s*(?:quantity|wt|weight)|quantity):\s*(.+)/i) ||
-      (isCakeOrBritannia ? '3 N x 40 g = 120 g' : '100 g');
-
-    const mrp = geminiExtracted?.mrp ||
-      matchLine(/(?:m\.?r\.?p\.?|price|rs\.?):\s*(.+)/i) ||
-      (isCakeOrBritannia ? 'Rs. 80.00 (Rs. 0.67/g)' : 'Rs. 50.00');
-
-    const mfg = geminiExtracted?.manufacturer ||
-      matchLine(/(?:manufactured by|mfg by|packer|importer|marketed by):\s*(.+)/i) ||
-      (isCakeOrBritannia
-        ? 'Britannia Industries Ltd., 5/1 A Hungerford Street, Kolkata-700017, West Bengal'
-        : 'Authorized Manufacturer / Packer');
-
-    const mfgDate = geminiExtracted?.date_of_manufacture ||
-      matchLine(/(?:date of (?:mfg|manufacture|packing)|mfg date|pkd):\s*(.+)/i) ||
-      (isCakeOrBritannia ? '13/12/25' : '12/2025');
-
-    const care = geminiExtracted?.consumer_care ||
-      matchLine(/(?:consumer care|care|customer care|helpline|email):\s*(.+)/i) ||
-      (isCakeOrBritannia
-        ? 'Executive, Consumer Care Cell, Ph: 1-800-4254449 / 1-800-30004530, feedback@britindia.com, Prestige Shantiniketan, Tower C, Whitefield, Bangalore-560048'
-        : 'Consumer Care Cell, Tel: 1800-11-4000, Email: customercare@packcompliance.in');
-
-    const origin = geminiExtracted?.country_of_origin ||
-      matchLine(/(?:country of origin|made in|origin):\s*(.+)/i) ||
-      (isImported ? '' : 'India');
-
-    // Identify evidence image IDs:
-    // When multiple images are uploaded, declarations printed on the back panel (Net weight, MRP, manufacturer, date, consumer care)
-    // point to the 2nd image (the back panel image)
-    const backPanelIdx = geminiExtracted?.back_panel_image_index != null
-      ? geminiExtracted.back_panel_image_index
-      : (insStored.length > 1 ? 1 : 0);
-
-    const backStoredImg = insStored[backPanelIdx] || insStored[1] || insStored[0];
-    const frontStoredImg = insStored[0];
-
-    // Also check ins.images if stored image buffer wasn't loaded
-    const backImageId = backStoredImg?.id ||
-      (ins.images.find(img => img.image_type === 'back')?.id) ||
-      (ins.images.length > 1 ? ins.images[1].id : ins.images[0]?.id) ||
-      'img-back';
-
-    const frontImageId = frontStoredImg?.id ||
-      (ins.images.find(img => img.image_type === 'front')?.id) ||
-      (ins.images.length > 0 ? ins.images[0].id : 'img-front');
-
-    // Build fields list
-    const declarations = [
-      { name: 'commodity_name', val: commName, panel: 'principal', y: 320, imageId: frontImageId },
-      { name: 'net_quantity', val: netQty, panel: 'principal', y: 380, imageId: backImageId },
-      { name: 'mrp', val: mrp, panel: 'principal', y: 440, imageId: backImageId },
-      { name: 'manufacturer', val: mfg, panel: 'other', y: 640, imageId: backImageId },
-      { name: 'date_of_manufacture', val: mfgDate, panel: 'other', y: 720, imageId: backImageId },
-      { name: 'consumer_care', val: care, panel: 'other', y: 820, imageId: backImageId },
-      ...(isImported ? [{ name: 'country_of_origin', val: origin, panel: 'other', y: 900, imageId: backImageId }] : []),
-    ];
-
-    ins.fields = declarations.map((d) => {
-      const present = Boolean(d.val && d.val.trim());
-      const conf = present ? 0.95 : 0.0;
-      return {
-        id: `f-${ins.id}-${d.name}`,
-        inspection_id: ins.id,
-        field_name: d.name,
-        present,
-        raw_value: present ? d.val : null,
-        corrected_value: null,
-        effective_value: present ? d.val : null,
-        normalized: present ? { raw: d.val } : null,
-        confidence: conf,
-        panel: d.panel,
-        evidence: {
-          image_id: d.imageId,
-          bbox: [150, d.y, 850, d.y + 45],
-          ocr_text: d.val || ''
-        },
-        measurement: { status: 'MEASURED', height_mm: 3.2, confidence: 0.95 },
-        notes: [],
-        verification_status: 'DETECTED',
-      };
-    });
-
-    // Ensure we have at least front & back images attached
-    if (ins.images.length === 0) {
-      ins.images.push(
-        { id: 'img-front', image_type: 'front', file_name: 'front.jpg', file_path: '', quality_score: 0.98, created_at: new Date().toISOString() },
-        { id: 'img-back', image_type: 'back', file_name: 'back.jpg', file_path: '', quality_score: 0.95, created_at: new Date().toISOString() }
       );
+
+      extractedFields = extraction.fields;
+      imageQuality = extraction.imageQuality;
+
+      // Update product metadata if detected on pack and missing in record
+      if (extraction.productDetails && ins.product) {
+        if (extraction.productDetails.brand && !ins.product.brand) {
+          ins.product.brand = extraction.productDetails.brand;
+        }
+        if (extraction.productDetails.product_name && !ins.product.product_name) {
+          ins.product.product_name = extraction.productDetails.product_name;
+        }
+        if (extraction.productDetails.barcode && !ins.product.barcode) {
+          ins.product.barcode = extraction.productDetails.barcode;
+        }
+      }
+    } else if (ins.listing_text && ins.listing_text.trim()) {
+      // E-commerce or digital product listing text extraction
+      const extraction = extractFromListingText(ins.listing_text, ins.id, isImported);
+      extractedFields = extraction.fields;
+      imageQuality = extraction.imageQuality;
+    } else {
+      // Neither photograph nor listing text submitted: truthful empty extraction
+      const requiredFieldNames = [
+        'commodity_name',
+        'net_quantity',
+        'mrp',
+        'manufacturer',
+        'date_of_manufacture',
+        'consumer_care',
+        ...(isImported ? ['country_of_origin'] : []),
+      ];
+      extractedFields = requiredFieldNames.map(fName => ({
+        id: `f-${ins.id}-${fName}`,
+        inspection_id: ins.id,
+        field_name: fName,
+        present: false,
+        raw_value: null,
+        corrected_value: null,
+        effective_value: null,
+        normalized: null,
+        confidence: 0,
+        panel: 'unknown',
+        evidence: null,
+        measurement: { status: 'UNAVAILABLE', height_mm: null, detail: 'No packaging photographs uploaded' },
+        notes: ['No packaging photographs or listing text were submitted for this inspection.'],
+        verification_status: 'LOW_CONFIDENCE',
+      }));
+
+      imageQuality = {
+        status: 'VERY_POOR',
+        score: 0,
+        factor: 0.40,
+        issues: ['No photographs uploaded for this packaging inspection'],
+        metrics: {
+          resolution: 'LOW',
+          sharpness: 'BLURRY',
+          lighting: 'DARK',
+          framing: 'OBSTRUCTED',
+        },
+        warning: 'Cannot perform statutory metrology verification without uploaded photographs or digital listing text.',
+        model_confidence: 0,
+        adjusted_confidence: 0,
+        can_proceed: false,
+        summary: 'No photographic evidence available for analysis.',
+        assessed_at: new Date().toISOString(),
+      };
     }
 
-    // Evaluate rules
-    ins.rule_results = [];
-    rules.forEach(rule => {
-      const ver = rule.versions.find(v => v.active) || rule.versions[0];
-      if (!ver) return;
+    ins.fields = extractedFields;
+    ins.image_quality = imageQuality;
 
-      // Check applicability
-      if (rule.applicability?.imported_only && !isImported) {
-        ins.rule_results.push({
-          id: `res-${ins.id}-${rule.code}`,
-          inspection_id: ins.id,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: ver.version,
-          rule_version_id: ver.id,
-          title: rule.title,
-          field: rule.field,
-          result: 'NOT_APPLICABLE',
-          severity: rule.severity,
-          reason: 'Pack is domestic; import rules do not apply.',
-          source_reference: ver.source_reference,
-          verification_status: ver.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-        return;
-      }
+    // 2. Deterministic rule evaluation
+    const evaluation = evaluateInspectionRules(
+      rules,
+      {
+        id: ins.id,
+        channel: ins.channel,
+        is_imported: isImported,
+        panel_width_mm: ins.panel_width_mm,
+        panel_height_mm: ins.panel_height_mm,
+        notes: ins.notes,
+      },
+      ins.fields,
+      ins.image_quality
+    );
 
-      if (rule.applicability?.channels && !rule.applicability.channels.includes(ins.channel)) {
-        ins.rule_results.push({
-          id: `res-${ins.id}-${rule.code}`,
-          inspection_id: ins.id,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: ver.version,
-          rule_version_id: ver.id,
-          title: rule.title,
-          field: rule.field,
-          result: 'NOT_APPLICABLE',
-          severity: rule.severity,
-          reason: 'Applies only to specified sales channels.',
-          source_reference: ver.source_reference,
-          verification_status: ver.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-        return;
-      }
-
-      if (rule.requirement_type === 'presence' && rule.field) {
-        const fld = ins.fields.find(f => f.field_name === rule.field);
-        if (!fld || !fld.present) {
-          ins.rule_results.push({
-            id: `res-${ins.id}-${rule.code}`,
-            inspection_id: ins.id,
-            rule_id: rule.id,
-            rule_code: rule.code,
-            rule_version: ver.version,
-            rule_version_id: ver.id,
-            title: rule.title,
-            field: rule.field,
-            result: 'FAIL',
-            severity: rule.severity,
-            reason: `${rule.title} was not found on any submitted image.`,
-            source_reference: ver.source_reference,
-            verification_status: ver.verification_status,
-            reviewer_status: 'MACHINE',
-            reviewer_note: '',
-          });
-        } else if (fld.confidence < (ver.definition?.confidence_floor || 0.70)) {
-          ins.rule_results.push({
-            id: `res-${ins.id}-${rule.code}`,
-            inspection_id: ins.id,
-            rule_id: rule.id,
-            rule_code: rule.code,
-            rule_version: ver.version,
-            rule_version_id: ver.id,
-            title: rule.title,
-            field: rule.field,
-            result: 'REVIEW',
-            severity: rule.severity,
-            reason: `Read at ${Math.round(fld.confidence * 100)}% confidence, below 70% threshold. Confirm before finalising.`,
-            evidence: fld.evidence,
-            source_reference: ver.source_reference,
-            verification_status: ver.verification_status,
-            reviewer_status: 'MACHINE',
-            reviewer_note: '',
-          });
-        } else {
-          ins.rule_results.push({
-            id: `res-${ins.id}-${rule.code}`,
-            inspection_id: ins.id,
-            rule_id: rule.id,
-            rule_code: rule.code,
-            rule_version: ver.version,
-            rule_version_id: ver.id,
-            title: rule.title,
-            field: rule.field,
-            result: 'PASS',
-            severity: rule.severity,
-            reason: `${rule.title} is present: "${fld.raw_value}".`,
-            evidence: fld.evidence,
-            source_reference: ver.source_reference,
-            verification_status: ver.verification_status,
-            reviewer_status: 'MACHINE',
-            reviewer_note: '',
-          });
-        }
-      } else if (rule.requirement_type === 'format') {
-        const fld = ins.fields.find(f => f.field_name === rule.field);
-        ins.rule_results.push({
-          id: `res-${ins.id}-${rule.code}`,
-          inspection_id: ins.id,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: ver.version,
-          rule_version_id: ver.id,
-          title: rule.title,
-          field: rule.field,
-          result: fld && fld.present ? 'PASS' : 'NOT_APPLICABLE',
-          severity: rule.severity,
-          reason: fld && fld.present ? 'Declared in the required form.' : 'Field is absent.',
-          evidence: fld?.evidence,
-          source_reference: ver.source_reference,
-          verification_status: ver.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-      } else if (rule.requirement_type === 'placement') {
-        const fld = ins.fields.find(f => f.field_name === rule.field);
-        ins.rule_results.push({
-          id: `res-${ins.id}-${rule.code}`,
-          inspection_id: ins.id,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: ver.version,
-          rule_version_id: ver.id,
-          title: rule.title,
-          field: rule.field,
-          result: fld && fld.present ? (fld.panel === 'principal' ? 'PASS' : 'FAIL') : 'NOT_APPLICABLE',
-          severity: rule.severity,
-          reason: fld && fld.present
-            ? fld.panel === 'principal'
-              ? 'Appears on the principal display panel.'
-              : `Found on ${fld.panel} panel, but required on principal display panel.`
-            : 'Field is absent.',
-          evidence: fld?.evidence,
-          source_reference: ver.source_reference,
-          verification_status: ver.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-      } else if (rule.requirement_type === 'character_height') {
-        const fld = ins.fields.find(f => f.field_name === rule.field);
-        ins.rule_results.push({
-          id: `res-${ins.id}-${rule.code}`,
-          inspection_id: ins.id,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: ver.version,
-          rule_version_id: ver.id,
-          title: rule.title,
-          field: rule.field,
-          result: fld && fld.present ? 'PASS' : 'NOT_APPLICABLE',
-          severity: rule.severity,
-          reason: fld && fld.present ? 'Measured 3.20 mm against 2.00 mm minimum.' : 'Field is absent.',
-          evidence: fld?.evidence,
-          source_reference: ver.source_reference,
-          verification_status: ver.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-      } else {
-        // Consistency rules
-        ins.rule_results.push({
-          id: `res-${ins.id}-${rule.code}`,
-          inspection_id: ins.id,
-          rule_id: rule.id,
-          rule_code: rule.code,
-          rule_version: ver.version,
-          rule_version_id: ver.id,
-          title: rule.title,
-          field: rule.field,
-          result: 'PASS',
-          severity: rule.severity,
-          reason: 'Verified declarations are consistent across panels.',
-          source_reference: ver.source_reference,
-          verification_status: ver.verification_status,
-          reviewer_status: 'MACHINE',
-          reviewer_note: '',
-        });
-      }
-    });
-
-    const hasFail = ins.rule_results.some(r => r.result === 'FAIL');
-    const hasReview = ins.rule_results.some(r => r.result === 'REVIEW');
-
-    ins.compliance_status = hasFail ? 'NON_COMPLIANT' : hasReview ? 'REVIEW_REQUIRED' : 'COMPLIANT';
-    ins.highest_severity = hasFail
-      ? ins.rule_results.find(r => r.result === 'FAIL' && r.severity === 'CRITICAL')
-        ? 'CRITICAL'
-        : 'MAJOR'
-      : null;
+    ins.rule_results = evaluation.rule_results;
+    ins.compliance_status = evaluation.compliance_status;
+    ins.highest_severity = evaluation.highest_severity;
     ins.status = 'REVIEW';
     ins.analysis_ms = Math.max(120, Date.now() - startTime);
     ins.analysed_at = new Date().toISOString();
@@ -1854,6 +1310,58 @@ Return JSON only conforming to:
     });
   });
 
+  // OCR Service: Engine Status
+  app.get('/api/ocr/status', (req, res) => {
+    const hasKey = Boolean(process.env.GEMINI_API_KEY);
+    res.json({
+      available: hasKey,
+      ready: hasKey,
+      engine: hasKey ? 'google-gemini-vision' : 'none',
+      model: hasKey ? 'gemini-3.1-flash-lite' : 'none',
+      message: hasKey ? 'OCR engine active and operational' : 'No OCR engine configured (GEMINI_API_KEY is not set)',
+    });
+  });
+
+  // OCR Service: Direct Single-Image Extraction
+  app.post('/api/ocr/extract', authenticate, upload.single('image'), async (req, res) => {
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(503).json({
+        success: false,
+        status: 'UNAVAILABLE',
+        error: 'No active OCR engine is configured. Please configure GEMINI_API_KEY on the server.',
+        text: '',
+        declarations: {},
+      });
+    }
+
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({
+        success: false,
+        status: 'ERROR',
+        error: 'No image file uploaded for OCR extraction.',
+      });
+    }
+
+    const panelType = req.body.panel_type || 'general';
+    const isImported = req.body.is_imported === 'true';
+
+    try {
+      const result = await extractSingleImageOcr(
+        getGenAI(),
+        req.file.buffer,
+        req.file.mimetype || 'image/jpeg',
+        { panelType, isImported }
+      );
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        status: 'ERROR',
+        error: err?.message || 'Unexpected failure during OCR extraction',
+      });
+    }
+  });
+
   // Review: Correct Field
   app.patch('/api/review/inspections/:id/fields/:field', authenticate, (req, res) => {
     const ins = inspections.find(i => i.id === req.params.id);
@@ -1880,22 +1388,24 @@ Return JSON only conforming to:
     field.verified_by = user.id;
     field.verified_at = new Date().toISOString();
 
-    // Re-evaluate affected rule
-    const ruleRes = ins.rule_results.find(r => r.field === req.params.field);
-    if (ruleRes) {
-      if (field.present) {
-        ruleRes.result = 'PASS';
-        ruleRes.reason = `Confirmed by officer: "${corrected_value}".`;
-      } else {
-        ruleRes.result = 'FAIL';
-        ruleRes.reason = `Marked absent by officer.`;
-      }
-    }
+    // Re-evaluate with deterministic rule engine
+    const evaluation = evaluateInspectionRules(
+      rules,
+      {
+        id: ins.id,
+        channel: ins.channel,
+        is_imported: ins.is_imported,
+        panel_width_mm: ins.panel_width_mm,
+        panel_height_mm: ins.panel_height_mm,
+        notes: ins.notes,
+      },
+      ins.fields,
+      ins.image_quality
+    );
 
-    // Re-aggregate status
-    const hasFail = ins.rule_results.some(r => r.result === 'FAIL');
-    const hasReview = ins.rule_results.some(r => r.result === 'REVIEW');
-    ins.compliance_status = hasFail ? 'NON_COMPLIANT' : hasReview ? 'REVIEW_REQUIRED' : 'COMPLIANT';
+    ins.rule_results = evaluation.rule_results;
+    ins.compliance_status = evaluation.compliance_status;
+    ins.highest_severity = evaluation.highest_severity;
 
     recordAudit(user.id, 'extracted_field', field.id, 'CORRECT_FIELD', oldVal, { corrected_value, note });
 
@@ -2105,21 +1615,22 @@ Return JSON only conforming to:
     <tr><th>Reference</th><td>${foundInspection.reference}</td><th>Date</th><td>${foundInspection.inspection_date || '2026-09-01'}</td></tr>
     <tr><th>Product</th><td>${foundInspection.product?.brand} ${foundInspection.product?.product_name}</td><th>Category</th><td>${foundInspection.product?.category}</td></tr>
     <tr><th>Premises</th><td>${foundInspection.premises}, ${foundInspection.location}</td><th>Channel</th><td>${foundInspection.channel}</td></tr>
+    <tr><th>Optical Integrity</th><td>${foundInspection.image_quality?.status || 'GOOD'} (${foundInspection.image_quality?.score ?? 90}/100)</td><th>Reviewer Sign-off</th><td>${foundInspection.status === 'FINALIZED' ? 'Certified / Finalized' : 'In Review'}</td></tr>
   </table>
 
-  <h3>Declarations Checked</h3>
+  <h3>Declarations Checked & Extraction Confidence</h3>
   <table>
-    <thead><tr><th>Declaration</th><th>Value</th><th>Status</th><th>Panel</th></tr></thead>
+    <thead><tr><th>Declaration</th><th>Value</th><th>Status</th><th>Confidence</th><th>Panel</th></tr></thead>
     <tbody>
-      ${foundInspection.fields.map(f => `<tr><td>${f.field_name}</td><td>${f.effective_value || 'Absent'}</td><td>${f.present ? 'Present' : 'Missing'}</td><td>${f.panel}</td></tr>`).join('')}
+      ${foundInspection.fields.map(f => `<tr><td>${f.field_name}</td><td>${f.effective_value || 'Absent'}</td><td>${f.present ? 'Present' : 'Missing'}</td><td>${Math.round(f.confidence * 100)}%</td><td>${f.panel}</td></tr>`).join('')}
     </tbody>
   </table>
 
-  <h3>Rule Findings</h3>
+  <h3>Statutory Rule Findings & Gazette Citations</h3>
   <table>
-    <thead><tr><th>Rule</th><th>Result</th><th>Finding</th></tr></thead>
+    <thead><tr><th>Rule</th><th>Version</th><th>Result</th><th>Citation</th><th>Evaluation Finding</th></tr></thead>
     <tbody>
-      ${foundInspection.rule_results.map(r => `<tr><td>${r.rule_code}</td><td><strong>${r.result}</strong></td><td>${r.reason}</td></tr>`).join('')}
+      ${foundInspection.rule_results.map(r => `<tr><td><strong>${r.rule_code}</strong></td><td>v${r.rule_version || '1.0'}</td><td><strong>${r.result}</strong></td><td style="font-size: 11px; color: #555;">${r.source_reference || 'LMPC Rules, 2011'}</td><td>${r.reason}</td></tr>`).join('')}
     </tbody>
   </table>
   <p style="font-size: 11px; color: #5B6B7B; margin-top: 30px;">Generated by MetriScan AI on ${new Date().toUTCString()}. This document reflects machine-assisted extraction verified by an authorized inspector.</p>

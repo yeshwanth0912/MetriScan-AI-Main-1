@@ -15,9 +15,11 @@ import {
   AlertCircle,
   Loader2,
   FileText,
-  Info
+  Info,
+  Scan
 } from 'lucide-react'
 import { api } from '../api.js'
+import LiveScannerModal from '../components/LiveScannerModal.jsx'
 
 const IMAGE_TYPES = [
   { id: 'front', label: 'Front / Principal Panel', hint: 'Commodity name, Net quantity' },
@@ -89,6 +91,8 @@ export default function NewInspection() {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [dragOverPanel, setDragOverPanel] = useState(null)
+  const [showScannerModal, setShowScannerModal] = useState(false)
+  const [scannerPanel, setScannerPanel] = useState('front')
   const fileInputRefs = useRef({})
 
   const set = (k) => (e) => {
@@ -136,6 +140,25 @@ export default function NewInspection() {
       if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
       return prev.filter((f) => f.id !== id)
     })
+  }
+
+  const handleScannerCapture = ({ file, panel, declarations }) => {
+    const newItem = {
+      file,
+      imageType: panel || 'front',
+      id: crypto.randomUUID(),
+      previewUrl: URL.createObjectURL(file)
+    }
+    setFiles((prev) => [...prev, newItem])
+
+    // Auto-fill empty product description or notes from scanner readout
+    if (declarations) {
+      setForm((prev) => ({
+        ...prev,
+        product_name: prev.product_name || declarations.commodity_name || '',
+        notes: prev.notes || (declarations.mrp ? `Scanned live: MRP ${declarations.mrp}, Net Qty: ${declarations.net_quantity || 'N/A'}` : prev.notes)
+      }))
+    }
   }
 
   const submit = async (e) => {
@@ -334,12 +357,26 @@ export default function NewInspection() {
 
         {/* Right Column: Image Attachments */}
         <section className="panel p-4 space-y-4">
-          <div className="pb-3 border-b border-rule/60">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-              <Camera className="w-3.5 h-3.5 text-slate-500" />
-              Evidence Photographs
-            </h2>
-            <p className="text-[11px] text-slate-500">Capture or drop high-resolution label photos</p>
+          <div className="pb-3 border-b border-rule/60 flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                <Camera className="w-3.5 h-3.5 text-slate-500" />
+                <span>Evidence Photographs</span>
+              </h2>
+              <p className="text-[11px] text-slate-500">Capture or drop high-resolution label photos</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setScannerPanel('front')
+                setShowScannerModal(true)
+              }}
+              className="btn-ghost !text-2xs !py-1.5 !px-2.5 bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 flex items-center gap-1.5 shadow-xs font-medium"
+            >
+              <Scan className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Open Live Scanner</span>
+            </button>
           </div>
 
           {/* Panel Dropzones */}
@@ -484,6 +521,15 @@ export default function NewInspection() {
           </p>
         </section>
       </form>
+
+      {/* Live Camera Scanner Modal */}
+      <LiveScannerModal
+        isOpen={showScannerModal}
+        onClose={() => setShowScannerModal(false)}
+        onCapture={handleScannerCapture}
+        defaultPanel={scannerPanel}
+        productName={form.product_name}
+      />
     </div>
   )
 }
