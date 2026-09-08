@@ -1333,15 +1333,43 @@ async function startServer() {
       extractedFields = extraction.fields;
       imageQuality = extraction.imageQuality;
 
-      // Update product metadata if detected on pack and missing in record
-      if (extraction.productDetails && ins.product) {
-        if (extraction.productDetails.brand && !ins.product.brand) {
-          ins.product.brand = extraction.productDetails.brand;
+      // Update product metadata (brand & product name) if detected on pack and missing in record
+      if (ins.product) {
+        const commodityField = extractedFields.find(f => f.field_name === 'commodity_name');
+        const mfgField = extractedFields.find(f => f.field_name === 'manufacturer');
+
+        let detectedBrand = extraction.productDetails?.brand || '';
+        let detectedProductName = extraction.productDetails?.product_name || '';
+
+        if (!detectedProductName && commodityField && commodityField.present && commodityField.effective_value) {
+          detectedProductName = commodityField.effective_value.trim();
         }
-        if (extraction.productDetails.product_name && !ins.product.product_name) {
-          ins.product.product_name = extraction.productDetails.product_name;
+
+        if (!detectedBrand) {
+          if (detectedProductName) {
+            const firstToken = detectedProductName.split(/[\s-]+/)[0]?.replace(/[^a-zA-Z0-9]/g, '');
+            if (firstToken && firstToken.length >= 2) {
+              detectedBrand = firstToken;
+            }
+          }
+          if (!detectedBrand && mfgField && mfgField.present && mfgField.effective_value) {
+            const cleanMfg = mfgField.effective_value
+              .replace(/^(?:manufactured|mfg|packed|marketed|imported|packaged)\s*(?:by)?[:\s]*/i, '')
+              .trim();
+            const firstPart = cleanMfg.split(/[,.\n]/)[0]?.trim();
+            if (firstPart && firstPart.length >= 2 && firstPart.length <= 40) {
+              detectedBrand = firstPart;
+            }
+          }
         }
-        if (extraction.productDetails.barcode && !ins.product.barcode) {
+
+        if (detectedBrand && (!ins.product.brand || !ins.product.brand.trim())) {
+          ins.product.brand = detectedBrand;
+        }
+        if (detectedProductName && (!ins.product.product_name || !ins.product.product_name.trim() || ins.product.product_name === 'Unnamed package')) {
+          ins.product.product_name = detectedProductName;
+        }
+        if (extraction.productDetails?.barcode && !ins.product.barcode) {
           ins.product.barcode = extraction.productDetails.barcode;
         }
       }
@@ -1350,6 +1378,21 @@ async function startServer() {
       const extraction = extractFromListingText(ins.listing_text, ins.id, isImported);
       extractedFields = extraction.fields;
       imageQuality = extraction.imageQuality;
+
+      if (ins.product) {
+        const commodityField = extractedFields.find(f => f.field_name === 'commodity_name');
+        if (commodityField && commodityField.present && commodityField.effective_value) {
+          if (!ins.product.product_name || !ins.product.product_name.trim()) {
+            ins.product.product_name = commodityField.effective_value.trim();
+          }
+          if (!ins.product.brand || !ins.product.brand.trim()) {
+            const firstToken = commodityField.effective_value.split(/[\s-]+/)[0]?.replace(/[^a-zA-Z0-9]/g, '');
+            if (firstToken && firstToken.length >= 2) {
+              ins.product.brand = firstToken;
+            }
+          }
+        }
+      }
     } else {
       // Neither photograph nor listing text submitted: truthful empty extraction
       const requiredFieldNames = [

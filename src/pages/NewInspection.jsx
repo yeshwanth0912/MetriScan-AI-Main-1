@@ -35,7 +35,6 @@ const SAMPLE_PRESETS = [
     brand: 'Britannia',
     product_name: 'Good Day Butter Cookies',
     category: 'food',
-    barcode: '8901063012345',
     premises: 'Metro Cash & Carry, Warehouse 4',
     location: 'Yeshwanthpur, Bengaluru',
     channel: 'retail',
@@ -47,7 +46,6 @@ const SAMPLE_PRESETS = [
     brand: 'Dove',
     product_name: 'Deep Moisture Body Lotion 400ml',
     category: 'cosmetics',
-    barcode: '8901030998877',
     premises: 'Apollo Pharmacy',
     location: 'Indiranagar, Bengaluru',
     channel: 'retail',
@@ -59,7 +57,6 @@ const SAMPLE_PRESETS = [
     brand: 'Bertolli',
     product_name: 'Extra Virgin Olive Oil 1 Litre',
     category: 'food',
-    barcode: '8002210112233',
     premises: 'Nature Basket Supermarket',
     location: 'Koramangala, Bengaluru',
     channel: 'retail',
@@ -71,7 +68,6 @@ const SAMPLE_PRESETS = [
     brand: 'Tata Tea',
     product_name: 'Tata Tea Gold Leaf Tea 1kg',
     category: 'food',
-    barcode: '8901052001122',
     premises: 'QuickMart E-Store Listing',
     location: 'Online Marketplace',
     channel: 'ecommerce',
@@ -85,7 +81,7 @@ const SAMPLE_PRESETS = [
 export default function NewInspection() {
   const navigate = useNavigate()
   const [form, setForm] = useState({
-    brand: '', product_name: '', category: 'food', barcode: '',
+    brand: '', product_name: '', category: 'food',
     premises: '', location: '', channel: 'retail', listing_url: '', listing_text: '',
     is_imported: false, notes: ''
   })
@@ -104,17 +100,16 @@ export default function NewInspection() {
 
   const loadPreset = (preset) => {
     setForm({
-      brand: preset.brand,
-      product_name: preset.product_name,
-      category: preset.category,
-      barcode: preset.barcode,
-      premises: preset.premises,
-      location: preset.location,
-      channel: preset.channel,
+      brand: preset.brand || '',
+      product_name: preset.product_name || '',
+      category: preset.category || 'food',
+      premises: preset.premises || '',
+      location: preset.location || '',
+      channel: preset.channel || 'retail',
       listing_url: preset.listing_url || '',
       listing_text: preset.listing_text || '',
-      is_imported: preset.is_imported,
-      notes: preset.notes
+      is_imported: preset.is_imported || false,
+      notes: preset.notes || ''
     })
   }
 
@@ -267,29 +262,33 @@ export default function NewInspection() {
 
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="label" htmlFor="brand">Brand Name</label>
+              <label className="label flex items-center justify-between" htmlFor="brand">
+                <span>Brand Name</span>
+                <span className="text-[10px] text-indigo-600 font-normal">Auto-detected from scan</span>
+              </label>
               <input
                 id="brand"
                 className="field"
                 value={form.brand}
                 onChange={set('brand')}
-                placeholder="e.g. Parle, Amul, Nestlé"
-                required
+                placeholder="Optional (e.g. Parle, Britannia, Amul)"
               />
             </div>
             <div>
-              <label className="label" htmlFor="product">Product Description / Name</label>
+              <label className="label flex items-center justify-between" htmlFor="product">
+                <span>Product Description / Name</span>
+                <span className="text-[10px] text-indigo-600 font-normal">Auto-detected from scan</span>
+              </label>
               <input
                 id="product"
                 className="field"
                 value={form.product_name}
                 onChange={set('product_name')}
-                placeholder="e.g. Marie Biscuits, Full Cream Milk"
-                required
+                placeholder="Optional (e.g. Marie Biscuits, Full Cream Milk)"
               />
             </div>
 
-            <div>
+            <div className="sm:col-span-2">
               <label className="label" htmlFor="category">Commodity Category</label>
               <select id="category" className="field font-medium" value={form.category} onChange={set('category')}>
                 <option value="food">Food & Beverages</option>
@@ -297,17 +296,6 @@ export default function NewInspection() {
                 <option value="household">Household & Detergents</option>
                 <option value="other">Other Packaged Commodities</option>
               </select>
-            </div>
-
-            <div>
-              <label className="label" htmlFor="barcode">Barcode / GTIN</label>
-              <input
-                id="barcode"
-                className="field num"
-                value={form.barcode}
-                onChange={set('barcode')}
-                placeholder="e.g. 8901234567890"
-              />
             </div>
           </div>
 
