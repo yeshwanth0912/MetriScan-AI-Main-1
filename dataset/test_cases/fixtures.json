@@ -1,0 +1,129 @@
+{
+  "_comment": "Replayable OCR output for the golden test set. Each case is what the OCR engine would return for a package whose ground truth was checked by hand. Bounding boxes are in pixels of a nominal 1200x1600 photograph. Add a real case here every time OCR gets something wrong on a live pack.",
+  "cases": [
+    {
+      "id": "compliant-biscuit-500g",
+      "description": "Fully compliant FMCG biscuit pack, front and back.",
+      "expected_status": "COMPLIANT",
+      "context": { "category": "food", "channel": "retail", "is_imported": false },
+      "blocks": [
+        { "text": "CRISPO CLASSIC BISCUITS", "bbox": [140, 180, 1060, 268], "confidence": 0.98, "image_id": "img-front", "panel": "principal" },
+        { "text": "Common name: Sweet biscuits", "bbox": [150, 300, 780, 336], "confidence": 0.95, "image_id": "img-front", "panel": "principal" },
+        { "text": "Net Quantity: 500 g", "bbox": [150, 360, 620, 402], "confidence": 0.97, "image_id": "img-front", "panel": "principal" },
+        { "text": "M.R.P. Rs. 120.00 (incl. of all taxes)", "bbox": [150, 420, 900, 462], "confidence": 0.96, "image_id": "img-front", "panel": "principal" },
+        { "text": "Manufactured by: Crispo Foods Pvt Ltd", "bbox": [120, 620, 940, 656], "confidence": 0.94, "image_id": "img-back", "panel": "other" },
+        { "text": "Plot 42, Industrial Estate, Medchal Road, Hyderabad, Telangana 500055", "bbox": [120, 660, 1080, 694], "confidence": 0.92, "image_id": "img-back", "panel": "other" },
+        { "text": "Date of manufacture: 06/2026", "bbox": [120, 720, 700, 754], "confidence": 0.93, "image_id": "img-back", "panel": "other" },
+        { "text": "Best before 12 months from packing: 06/2027", "bbox": [120, 760, 900, 794], "confidence": 0.91, "image_id": "img-back", "panel": "other" },
+        { "text": "Consumer care: care@crispofoods.in", "bbox": [120, 820, 820, 854], "confidence": 0.93, "image_id": "img-back", "panel": "other" },
+        { "text": "Toll free 1800 300 1234", "bbox": [120, 858, 620, 892], "confidence": 0.94, "image_id": "img-back", "panel": "other" }
+      ]
+    },
+    {
+      "id": "missing-consumer-care",
+      "description": "Same pack with the consumer care block removed.",
+      "expected_status": "NON_COMPLIANT",
+      "expected_violations": ["LM-D-006"],
+      "context": { "category": "food", "channel": "retail", "is_imported": false },
+      "blocks": [
+        { "text": "CRISPO CLASSIC BISCUITS", "bbox": [140, 180, 1060, 268], "confidence": 0.98, "image_id": "img-front", "panel": "principal" },
+        { "text": "Net Quantity: 500 g", "bbox": [150, 360, 620, 402], "confidence": 0.97, "image_id": "img-front", "panel": "principal" },
+        { "text": "M.R.P. Rs. 120.00 (incl. of all taxes)", "bbox": [150, 420, 900, 462], "confidence": 0.96, "image_id": "img-front", "panel": "principal" },
+        { "text": "Manufactured by: Crispo Foods Pvt Ltd", "bbox": [120, 620, 940, 656], "confidence": 0.94, "image_id": "img-back", "panel": "other" },
+        { "text": "Plot 42, Industrial Estate, Hyderabad, Telangana 500055", "bbox": [120, 660, 1080, 694], "confidence": 0.92, "image_id": "img-back", "panel": "other" },
+        { "text": "Date of manufacture: 06/2026", "bbox": [120, 720, 700, 754], "confidence": 0.93, "image_id": "img-back", "panel": "other" }
+      ]
+    },
+    {
+      "id": "missing-mrp",
+      "description": "No retail sale price anywhere on the pack.",
+      "expected_status": "NON_COMPLIANT",
+      "expected_violations": ["LM-D-004"],
+      "context": { "category": "food", "channel": "retail", "is_imported": false },
+      "blocks": [
+        { "text": "CRISPO CLASSIC BISCUITS", "bbox": [140, 180, 1060, 268], "confidence": 0.98, "image_id": "img-front", "panel": "principal" },
+        { "text": "Net Quantity: 500 g", "bbox": [150, 360, 620, 402], "confidence": 0.97, "image_id": "img-front", "panel": "principal" },
+        { "text": "Manufactured by: Crispo Foods Pvt Ltd, Hyderabad 500055", "bbox": [120, 620, 940, 656], "confidence": 0.94, "image_id": "img-back", "panel": "other" },
+        { "text": "Date of manufacture: 06/2026", "bbox": [120, 720, 700, 754], "confidence": 0.93, "image_id": "img-back", "panel": "other" },
+        { "text": "Consumer care: care@crispofoods.in", "bbox": [120, 820, 820, 854], "confidence": 0.93, "image_id": "img-back", "panel": "other" }
+      ]
+    },
+    {
+      "id": "low-confidence-date",
+      "description": "Faded date print. Must route to REVIEW, never to FAIL.",
+      "expected_status": "REVIEW_REQUIRED",
+      "context": { "category": "food", "channel": "retail", "is_imported": false },
+      "blocks": [
+        { "text": "CRISPO CLASSIC BISCUITS", "bbox": [140, 180, 1060, 268], "confidence": 0.98, "image_id": "img-front", "panel": "principal" },
+        { "text": "Net Quantity: 500 g", "bbox": [150, 360, 620, 402], "confidence": 0.97, "image_id": "img-front", "panel": "principal" },
+        { "text": "M.R.P. Rs. 120.00 (incl. of all taxes)", "bbox": [150, 420, 900, 462], "confidence": 0.96, "image_id": "img-front", "panel": "principal" },
+        { "text": "Manufactured by: Crispo Foods Pvt Ltd, Hyderabad 500055", "bbox": [120, 620, 940, 656], "confidence": 0.94, "image_id": "img-back", "panel": "other" },
+        { "text": "Date of manufacture: 06/2026", "bbox": [120, 720, 700, 754], "confidence": 0.41, "image_id": "img-back", "panel": "other" },
+        { "text": "Consumer care: care@crispofoods.in", "bbox": [120, 820, 820, 854], "confidence": 0.93, "image_id": "img-back", "panel": "other" }
+      ]
+    },
+    {
+      "id": "conflicting-mrp",
+      "description": "Two different retail prices printed on one pack.",
+      "expected_status": "NON_COMPLIANT",
+      "expected_violations": ["LM-C-003"],
+      "context": { "category": "food", "channel": "retail", "is_imported": false },
+      "blocks": [
+        { "text": "CRISPO CLASSIC BISCUITS", "bbox": [140, 180, 1060, 268], "confidence": 0.98, "image_id": "img-front", "panel": "principal" },
+        { "text": "Net Quantity: 500 g", "bbox": [150, 360, 620, 402], "confidence": 0.97, "image_id": "img-front", "panel": "principal" },
+        { "text": "M.R.P. Rs. 120.00 (incl. of all taxes)", "bbox": [150, 420, 900, 462], "confidence": 0.96, "image_id": "img-front", "panel": "principal" },
+        { "text": "MRP Rs. 145.00 incl of all taxes", "bbox": [150, 900, 900, 942], "confidence": 0.95, "image_id": "img-back", "panel": "other" },
+        { "text": "Manufactured by: Crispo Foods Pvt Ltd, Hyderabad 500055", "bbox": [120, 620, 940, 656], "confidence": 0.94, "image_id": "img-back", "panel": "other" },
+        { "text": "Date of manufacture: 06/2026", "bbox": [120, 720, 700, 754], "confidence": 0.93, "image_id": "img-back", "panel": "other" },
+        { "text": "Consumer care: care@crispofoods.in", "bbox": [120, 820, 820, 854], "confidence": 0.93, "image_id": "img-back", "panel": "other" }
+      ]
+    },
+    {
+      "id": "imported-no-origin",
+      "description": "Imported package with no country of origin declared.",
+      "expected_status": "NON_COMPLIANT",
+      "expected_violations": ["LM-D-007"],
+      "context": { "category": "food", "channel": "retail", "is_imported": true },
+      "blocks": [
+        { "text": "ALPINE DARK CHOCOLATE", "bbox": [140, 180, 1060, 268], "confidence": 0.97, "image_id": "img-front", "panel": "principal" },
+        { "text": "Net Quantity: 100 g", "bbox": [150, 360, 620, 402], "confidence": 0.96, "image_id": "img-front", "panel": "principal" },
+        { "text": "MRP Rs. 450.00 inclusive of all taxes", "bbox": [150, 420, 900, 462], "confidence": 0.95, "image_id": "img-front", "panel": "principal" },
+        { "text": "Imported by: Alpine Imports LLP", "bbox": [120, 620, 940, 656], "confidence": 0.93, "image_id": "img-back", "panel": "other" },
+        { "text": "12 MG Road, Bengaluru, Karnataka 560001", "bbox": [120, 660, 1080, 694], "confidence": 0.92, "image_id": "img-back", "panel": "other" },
+        { "text": "Date of import: 03/2026", "bbox": [120, 720, 700, 754], "confidence": 0.94, "image_id": "img-back", "panel": "other" },
+        { "text": "Consumer care: 1800 200 4455", "bbox": [120, 820, 820, 854], "confidence": 0.93, "image_id": "img-back", "panel": "other" }
+      ]
+    },
+    {
+      "id": "misleading-unit-price",
+      "description": "Unit sale price does not follow from MRP and net quantity.",
+      "expected_status": "NON_COMPLIANT",
+      "expected_violations": ["LM-C-002"],
+      "context": { "category": "food", "channel": "retail", "is_imported": false },
+      "blocks": [
+        { "text": "GOLDEN HARVEST ATTA", "bbox": [140, 180, 1060, 268], "confidence": 0.97, "image_id": "img-front", "panel": "principal" },
+        { "text": "Net Quantity: 5 kg", "bbox": [150, 360, 620, 402], "confidence": 0.97, "image_id": "img-front", "panel": "principal" },
+        { "text": "MRP Rs. 300.00 inclusive of all taxes", "bbox": [150, 420, 900, 462], "confidence": 0.96, "image_id": "img-front", "panel": "principal" },
+        { "text": "Unit sale price: Rs. 22.00 per 1 kg", "bbox": [150, 470, 900, 510], "confidence": 0.95, "image_id": "img-front", "panel": "principal" },
+        { "text": "Manufactured by: Golden Harvest Mills, Hyderabad 500032", "bbox": [120, 620, 940, 656], "confidence": 0.94, "image_id": "img-back", "panel": "other" },
+        { "text": "Date of packing: 05/2026", "bbox": [120, 720, 700, 754], "confidence": 0.93, "image_id": "img-back", "panel": "other" },
+        { "text": "Consumer care: care@goldenharvest.in", "bbox": [120, 820, 820, 854], "confidence": 0.93, "image_id": "img-back", "panel": "other" }
+      ]
+    },
+    {
+      "id": "quantity-not-on-principal-panel",
+      "description": "Net quantity printed only on the back panel.",
+      "expected_status": "NON_COMPLIANT",
+      "expected_violations": ["LM-P-003"],
+      "context": { "category": "food", "channel": "retail", "is_imported": false },
+      "blocks": [
+        { "text": "CRISPO CLASSIC BISCUITS", "bbox": [140, 180, 1060, 268], "confidence": 0.98, "image_id": "img-front", "panel": "principal" },
+        { "text": "M.R.P. Rs. 120.00 (incl. of all taxes)", "bbox": [150, 420, 900, 462], "confidence": 0.96, "image_id": "img-front", "panel": "principal" },
+        { "text": "Net Quantity: 500 g", "bbox": [150, 960, 620, 1002], "confidence": 0.97, "image_id": "img-back", "panel": "other" },
+        { "text": "Manufactured by: Crispo Foods Pvt Ltd, Hyderabad 500055", "bbox": [120, 620, 940, 656], "confidence": 0.94, "image_id": "img-back", "panel": "other" },
+        { "text": "Date of manufacture: 06/2026", "bbox": [120, 720, 700, 754], "confidence": 0.93, "image_id": "img-back", "panel": "other" },
+        { "text": "Consumer care: care@crispofoods.in", "bbox": [120, 820, 820, 854], "confidence": 0.93, "image_id": "img-back", "panel": "other" }
+      ]
+    }
+  ]
+}

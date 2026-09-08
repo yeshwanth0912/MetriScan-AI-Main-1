@@ -1,0 +1,44 @@
+# Environments & secrets
+.env
+.env.*
+!.env.example
+*.env
+backend/.env
+
+# Python
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Databases & local storage
+*.db
+*.sqlite
+*.sqlite3
+metriscan.db
+storage/originals/*
+!storage/originals/.gitkeep
+storage/processed/*
+!storage/processed/.gitkeep
+storage/reports/*
+!storage/reports/.gitkeep
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+.vite/
+*.log
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

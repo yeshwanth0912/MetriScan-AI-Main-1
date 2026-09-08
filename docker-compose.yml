@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-metriscan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-metriscan}
+      POSTGRES_DB: ${POSTGRES_DB:-metriscan}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-metriscan}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-metriscan}:${POSTGRES_PASSWORD:-metriscan}@db:5432/${POSTGRES_DB:-metriscan}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env before starting}
+      STORAGE_PATH: /data/storage
+      RULES_PATH: /app/rules/lmpc_rules.json
+      OCR_ENGINE: ${OCR_ENGINE:-paddle}
+      ALLOW_UNVERIFIED_RULES: ${ALLOW_UNVERIFIED_RULES:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      APP_ENV: ${APP_ENV:-development}
+    volumes:
+      - storage:/data/storage
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  storage:

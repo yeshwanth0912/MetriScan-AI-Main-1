@@ -1,0 +1,444 @@
+{
+  "meta": {
+    "pack_name": "Legal Metrology (Packaged Commodities) — MetriScan starter pack",
+    "pack_version": "0.1.0",
+    "statute": "Legal Metrology Act, 2009 and the Legal Metrology (Packaged Commodities) Rules, 2011 as amended",
+    "prepared_for": "SIH Problem Statement 26034",
+    "WARNING": "Rule text, rule numbers and every numeric threshold below marked UNVERIFIED are placeholders derived from the problem statement's own list of mandatory declarations. They are NOT a legal source. Before any demo or deployment, open the current consolidated Rules on consumeraffairs.gov.in plus the amending gazette notifications, replace each definition, put the G.S.R. number in source_reference, and set verification_status to VERIFIED. The application blocks finalisation while UNVERIFIED versions are in force unless METRISCAN_ALLOW_UNVERIFIED_RULES is set.",
+    "amendments_to_check": [
+      "G.S.R. 128(E) dated 13 February 2026 — inserted Rule 6(10A), country-of-origin filter for e-commerce",
+      "Second Amendment Rules 2026 dated 27 April 2026 — substituted Rule 6(10A), commencement moved to 1 July 2027",
+      "Third Amendment Rules 2026, G.S.R. 418(E) dated 29 May 2026 — importer labelling at AEO bonded warehouses, director accountability, annual online updates",
+      "Jan Vishwas (Amendment of Provisions) Act, 2026 dated 8 April 2026 — decriminalisation; affects the severity model, not the declarations"
+    ]
+  },
+  "rules": [
+    {
+      "rule_id": "r-commodity-name",
+      "code": "LM-D-001",
+      "title": "Name of the commodity",
+      "description": "The package must declare the name of the commodity contained in it.",
+      "category": "declaration",
+      "requirement_type": "presence",
+      "severity": "MAJOR",
+      "field": "commodity_name",
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-commodity-name-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "VERIFY against the mandatory-declarations rule in the current consolidated LMPC Rules, 2011.",
+          "definition": { "confidence_floor": 0.7 }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-manufacturer",
+      "code": "LM-D-002",
+      "title": "Name and address of the manufacturer, packer or importer",
+      "description": "The package must declare the name and complete address of the manufacturer, packer or importer.",
+      "category": "declaration",
+      "requirement_type": "presence",
+      "severity": "CRITICAL",
+      "field": "manufacturer",
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-manufacturer-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "VERIFY against the mandatory-declarations rule in the current consolidated LMPC Rules, 2011.",
+          "definition": { "confidence_floor": 0.7 }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-manufacturer-address",
+      "code": "LM-F-002",
+      "title": "Manufacturer declaration includes a complete address",
+      "description": "A name on its own does not satisfy the requirement; a complete address must accompany it.",
+      "category": "format",
+      "requirement_type": "format",
+      "severity": "MAJOR",
+      "field": "manufacturer",
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-manufacturer-address-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "VERIFY what constitutes a complete address under the current Rules.",
+          "definition": {
+            "downgrade_to_review": true,
+            "require_normalized_true": { "has_address": true },
+            "messages": { "has_address": "no address text was detected after the manufacturer name" }
+          }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-net-quantity",
+      "code": "LM-D-003",
+      "title": "Net quantity",
+      "description": "The package must declare the net quantity in standard units of weight, measure or number.",
+      "category": "declaration",
+      "requirement_type": "presence",
+      "severity": "CRITICAL",
+      "field": "net_quantity",
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-net-quantity-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "VERIFY against the net-quantity declaration rule in the current consolidated LMPC Rules, 2011.",
+          "definition": { "confidence_floor": 0.7 }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-net-quantity-units",
+      "code": "LM-F-003",
+      "title": "Net quantity is declared in standard units",
+      "description": "Net quantity must be expressed in SI units of mass or volume, or in number.",
+      "category": "format",
+      "requirement_type": "format",
+      "severity": "MAJOR",
+      "field": "net_quantity",
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-net-quantity-units-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "VERIFY the permitted units and abbreviations in the current Rules and the SI-unit advisory.",
+          "definition": { "allowed_canonical_units": ["g", "ml", "unit", "m"] }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-net-quantity-placement",
+      "code": "LM-P-003",
+      "title": "Net quantity appears on the principal display panel",
+      "description": "The net quantity declaration must appear on the principal display panel of the package.",
+      "category": "placement",
+      "requirement_type": "placement",
+      "severity": "MAJOR",
+      "field": "net_quantity",
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-net-quantity-placement-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "VERIFY the placement requirement and the definition of principal display panel in the current Rules.",
+          "definition": { "required_panel": "principal" }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-net-quantity-height",
+      "code": "LM-H-003",
+      "title": "Net quantity is printed at the minimum permitted character height",
+      "description": "Numerals and letters in the net quantity declaration must meet a minimum height determined by the area of the principal display panel.",
+      "category": "readability",
+      "requirement_type": "character_height",
+      "severity": "MAJOR",
+      "field": "net_quantity",
+      "applicability": { "requires_pdp_dimensions": true },
+      "versions": [
+        {
+          "version_id": "rv-net-quantity-height-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "PLACEHOLDER TABLE — replace every band below with the height table in the current consolidated Rules before use.",
+          "definition": {
+            "tolerance_mm": 0.2,
+            "min_scale_confidence": 0.5,
+            "thresholds": [
+              { "min_area_cm2": null, "max_area_cm2": 100, "min_height_mm": 1.0 },
+              { "min_area_cm2": 100, "max_area_cm2": 500, "min_height_mm": 2.0 },
+              { "min_area_cm2": 500, "max_area_cm2": 2500, "min_height_mm": 4.0 },
+              { "min_area_cm2": 2500, "max_area_cm2": null, "min_height_mm": 6.0 }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-mrp",
+      "code": "LM-D-004",
+      "title": "Retail sale price (MRP)",
+      "description": "The package must declare the maximum retail price at which the commodity may be sold.",
+      "category": "declaration",
+      "requirement_type": "presence",
+      "severity": "CRITICAL",
+      "field": "mrp",
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-mrp-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "VERIFY against the retail sale price declaration rule in the current consolidated LMPC Rules, 2011.",
+          "definition": { "confidence_floor": 0.7 }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-mrp-inclusive",
+      "code": "LM-F-004",
+      "title": "MRP is declared as inclusive of all taxes",
+      "description": "The retail sale price must be declared in the prescribed form indicating that it is inclusive of all taxes.",
+      "category": "format",
+      "requirement_type": "format",
+      "severity": "MAJOR",
+      "field": "mrp",
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-mrp-inclusive-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "VERIFY the prescribed form of the retail sale price declaration in the current Rules.",
+          "definition": {
+            "downgrade_to_review": true,
+            "require_normalized_true": { "inclusive_of_taxes": true },
+            "messages": { "inclusive_of_taxes": "the wording 'inclusive of all taxes' was not detected near the price" }
+          }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-mrp-height",
+      "code": "LM-H-004",
+      "title": "MRP is printed at the minimum permitted character height",
+      "description": "Numerals in the retail sale price declaration must meet the prescribed minimum height.",
+      "category": "readability",
+      "requirement_type": "character_height",
+      "severity": "MAJOR",
+      "field": "mrp",
+      "applicability": { "requires_pdp_dimensions": true },
+      "versions": [
+        {
+          "version_id": "rv-mrp-height-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "PLACEHOLDER TABLE — replace with the height table in the current consolidated Rules before use.",
+          "definition": {
+            "tolerance_mm": 0.2,
+            "min_scale_confidence": 0.5,
+            "thresholds": [
+              { "min_area_cm2": null, "max_area_cm2": 100, "min_height_mm": 1.0 },
+              { "min_area_cm2": 100, "max_area_cm2": 500, "min_height_mm": 2.0 },
+              { "min_area_cm2": 500, "max_area_cm2": 2500, "min_height_mm": 4.0 },
+              { "min_area_cm2": 2500, "max_area_cm2": null, "min_height_mm": 6.0 }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-mfg-date",
+      "code": "LM-D-005",
+      "title": "Month and year of manufacture, packing or import",
+      "description": "The package must declare the month and year in which the commodity was manufactured, packed or imported.",
+      "category": "declaration",
+      "requirement_type": "presence",
+      "severity": "CRITICAL",
+      "field": "date_of_manufacture",
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-mfg-date-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "VERIFY against the date-of-manufacture declaration rule in the current consolidated LMPC Rules, 2011.",
+          "definition": { "confidence_floor": 0.7 }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-consumer-care",
+      "code": "LM-D-006",
+      "title": "Consumer care details",
+      "description": "The package must carry the name, address, telephone number or email address of the person who can be contacted with consumer complaints.",
+      "category": "declaration",
+      "requirement_type": "presence",
+      "severity": "MAJOR",
+      "field": "consumer_care",
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-consumer-care-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "VERIFY against the consumer-care declaration rule in the current consolidated LMPC Rules, 2011.",
+          "definition": { "confidence_floor": 0.7 }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-country-origin",
+      "code": "LM-D-007",
+      "title": "Country of origin for imported packages",
+      "description": "An imported package must declare the country of origin of the commodity.",
+      "category": "declaration",
+      "requirement_type": "presence",
+      "severity": "MAJOR",
+      "field": "country_of_origin",
+      "applicability": { "imported_only": true },
+      "versions": [
+        {
+          "version_id": "rv-country-origin-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "UNVERIFIED",
+          "source_reference": "VERIFY against the country-of-origin declaration rule for imported packages.",
+          "definition": { "confidence_floor": 0.7 }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-ecom-origin-filter",
+      "code": "LM-E-010A",
+      "title": "E-commerce listings of imported products carry a country-of-origin filter",
+      "description": "Rule 6(10A) requires an e-commerce entity offering an imported product for sale to provide the listing with a searchable and sortable filter specifying the country of origin. Included here as a worked example of rule versioning: the sub-rule was inserted with one commencement date and then substituted with a later one.",
+      "category": "e-commerce",
+      "requirement_type": "presence",
+      "severity": "MAJOR",
+      "field": "country_of_origin",
+      "applicability": { "channels": ["ecommerce"], "imported_only": true },
+      "versions": [
+        {
+          "version_id": "rv-ecom-origin-filter-1",
+          "version": 1,
+          "effective_from": "2026-07-01",
+          "effective_to": "2027-06-30",
+          "active": true,
+          "verification_status": "NEEDS_RECHECK",
+          "source_reference": "G.S.R. 128(E) dated 13 February 2026, inserting Rule 6(10A); notified commencement 1 July 2026. Confirm the gazette text directly.",
+          "definition": { "confidence_floor": 0.7 }
+        },
+        {
+          "version_id": "rv-ecom-origin-filter-2",
+          "version": 2,
+          "effective_from": "2027-07-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "NEEDS_RECHECK",
+          "source_reference": "Legal Metrology (Packaged Commodities) Second Amendment Rules, 2026 dated 27 April 2026, substituting Rule 6(10A) with effect from 1 July 2027. Confirm the gazette text directly.",
+          "definition": { "confidence_floor": 0.7 }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-consistency-dates",
+      "code": "LM-C-001",
+      "title": "Best-before date follows the date of manufacture",
+      "description": "Cross-field sanity check for a misleading or misprinted date pair.",
+      "category": "consistency",
+      "requirement_type": "consistency",
+      "severity": "MAJOR",
+      "field": null,
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-consistency-dates-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "VERIFIED",
+          "source_reference": "Internal consistency check, not a statutory requirement. Reported as a data-quality finding.",
+          "definition": { "check": "best_before_after_manufacture" }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-consistency-mrp-usp",
+      "code": "LM-C-002",
+      "title": "Unit sale price is consistent with the declared MRP and net quantity",
+      "description": "Detects a misleading unit price that does not follow from the declared MRP and quantity.",
+      "category": "consistency",
+      "requirement_type": "consistency",
+      "severity": "MAJOR",
+      "field": null,
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-consistency-mrp-usp-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "VERIFIED",
+          "source_reference": "Internal arithmetic consistency check between declared values.",
+          "definition": { "check": "mrp_matches_unit_sale_price", "tolerance_fraction": 0.05 }
+        }
+      ]
+    },
+    {
+      "rule_id": "r-consistency-mrp-single",
+      "code": "LM-C-003",
+      "title": "A single MRP value appears across all submitted images",
+      "description": "Two different retail prices printed on one package is a misleading declaration.",
+      "category": "consistency",
+      "requirement_type": "consistency",
+      "severity": "CRITICAL",
+      "field": null,
+      "applicability": {},
+      "versions": [
+        {
+          "version_id": "rv-consistency-mrp-single-1",
+          "version": 1,
+          "effective_from": "2011-04-01",
+          "effective_to": null,
+          "active": true,
+          "verification_status": "VERIFIED",
+          "source_reference": "Internal consistency check across the images of one inspection.",
+          "definition": { "check": "mrp_single_value" }
+        }
+      ]
+    }
+  ]
+}

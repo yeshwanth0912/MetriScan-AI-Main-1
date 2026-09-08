@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body { @apply bg-paper text-ink font-sans text-sm antialiased; }
+  /* Keyboard focus stays visible; officers work fast and often by keyboard. */
+  :focus-visible { @apply outline-none ring-2 ring-ink ring-offset-1 ring-offset-paper; }
+}
+
+@layer components {
+  .panel   { @apply bg-card border border-rule/80 rounded-xl shadow-subtle overflow-hidden; }
+  .btn     { @apply inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-transparent
+                    bg-ink text-white font-medium hover:bg-slate-800 active:scale-[0.98] disabled:opacity-40
+                    disabled:cursor-not-allowed transition-all duration-150 shadow-sm text-xs; }
+  .btn-ghost { @apply inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-rule
+                      bg-card text-ink font-medium hover:bg-slate-100/80 active:scale-[0.98] disabled:opacity-40
+                      disabled:cursor-not-allowed transition-all duration-150 text-xs shadow-subtle; }
+  .field   { @apply w-full px-3 py-2 rounded-lg border border-rule bg-card text-ink text-xs
+                    placeholder:text-muted/60 focus:border-ink/50 focus:ring-1 focus:ring-ink/20 transition-all; }
+  .label   { @apply block text-2xs font-semibold uppercase tracking-wider text-muted mb-1; }
+  .num     { @apply font-mono tabular-nums; }
+  .th      { @apply text-left text-2xs font-semibold tracking-wider uppercase text-muted px-3.5 py-2.5 bg-slate-50/70 border-b border-rule; }
+  .td      { @apply px-3.5 py-2.5 border-b border-rule/60 align-middle text-xs transition-colors; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
