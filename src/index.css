@@ -10,12 +10,12 @@
 }
 
 @layer components {
-  .panel   { @apply bg-card border border-rule/80 rounded-xl shadow-subtle overflow-hidden; }
+  .panel   { @apply bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-xl shadow-subtle overflow-hidden; }
   .btn     { @apply inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-transparent
                     bg-ink text-white font-medium hover:bg-slate-800 active:scale-[0.98] disabled:opacity-40
                     disabled:cursor-not-allowed transition-all duration-150 shadow-sm text-xs; }
-  .btn-ghost { @apply inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-rule
-                      bg-card text-ink font-medium hover:bg-slate-100/80 active:scale-[0.98] disabled:opacity-40
+  .btn-ghost { @apply inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-slate-200/90
+                      bg-white/90 backdrop-blur-sm text-ink font-medium hover:bg-slate-100/90 active:scale-[0.98] disabled:opacity-40
                       disabled:cursor-not-allowed transition-all duration-150 text-xs shadow-subtle; }
   .field   { @apply w-full px-3 py-2 rounded-lg border border-rule bg-card text-ink text-xs
                     placeholder:text-muted/60 focus:border-ink/50 focus:ring-1 focus:ring-ink/20 transition-all; }
@@ -23,6 +23,189 @@
   .num     { @apply font-mono tabular-nums; }
   .th      { @apply text-left text-2xs font-semibold tracking-wider uppercase text-muted px-3.5 py-2.5 bg-slate-50/70 border-b border-rule; }
   .td      { @apply px-3.5 py-2.5 border-b border-rule/60 align-middle text-xs transition-colors; }
+}
+
+@property --gradient-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@property --gradient-angle-offset {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@property --gradient-percent {
+  syntax: "<percentage>";
+  initial-value: 5%;
+  inherits: false;
+}
+
+@property --gradient-shine {
+  syntax: "<color>";
+  initial-value: white;
+  inherits: false;
+}
+
+.shiny-cta {
+  --animation: gradient-angle linear infinite;
+  --duration: 3s;
+  --shadow-size: 2px;
+  --speed: 120s;
+  --transition: 300ms cubic-bezier(0, 0, 0.2, 1);
+  isolation: isolate;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  outline-offset: 4px;
+  padding: 0.625rem 1.25rem;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  color: var(--shiny-cta-fg, #ffffff);
+  background: linear-gradient(var(--shiny-cta-bg, #0b192c), var(--shiny-cta-bg, #0b192c)) padding-box,
+    conic-gradient(
+        from calc(var(--gradient-angle, 0deg) - var(--gradient-angle-offset, 0deg)),
+        transparent,
+        var(--shiny-cta-highlight, #123A6B) var(--gradient-percent, 5%),
+        var(--gradient-shine, white) calc(var(--gradient-percent, 5%) * 2),
+        var(--shiny-cta-highlight, #123A6B) calc(var(--gradient-percent, 5%) * 3),
+        transparent calc(var(--gradient-percent, 5%) * 4)
+      )
+      border-box;
+  box-shadow: inset 0 0 0 1px var(--shiny-cta-bg-subtle, #1a293d), 0 4px 12px rgba(18, 58, 107, 0.35);
+  transition: var(--transition);
+  transition-property: inset-shadow, transform, box-shadow;
+}
+
+.shiny-cta:hover {
+  transform: scale(1.02);
+  box-shadow: inset 0 0 0 1px var(--shiny-cta-bg-subtle, #1a293d), 0 6px 18px rgba(18, 58, 107, 0.45);
+}
+
+.shiny-cta:active {
+  transform: scale(0.98);
+  translate: 0 1px;
+}
+
+.shiny-cta::before,
+.shiny-cta::after,
+.shiny-cta span::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-start: 50%;
+  translate: -50% -50%;
+  z-index: -1;
+}
+
+/* Dots pattern */
+.shiny-cta::before {
+  --size: calc(100% - var(--shadow-size) * 3);
+  --position: 2px;
+  --space: calc(var(--position) * 2);
+  width: var(--size);
+  height: var(--size);
+  background: radial-gradient(
+      circle at var(--position) var(--position),
+      white calc(var(--position) / 4),
+      transparent 0
+    )
+    padding-box;
+  background-size: var(--space) var(--space);
+  background-repeat: space;
+  mask-image: conic-gradient(
+    from calc(var(--gradient-angle, 0deg) + 45deg),
+    black,
+    transparent 10% 90%,
+    black
+  );
+  border-radius: inherit;
+  opacity: 0.4;
+  z-index: -1;
+}
+
+/* Inner shimmer */
+.shiny-cta::after {
+  --animation: shimmer linear infinite;
+  width: 100%;
+  aspect-ratio: 1;
+  background: linear-gradient(
+    -50deg,
+    transparent,
+    var(--shiny-cta-highlight, #123A6B),
+    transparent
+  );
+  mask-image: radial-gradient(circle at bottom, transparent 40%, black);
+  opacity: 0.6;
+}
+
+.shiny-cta span {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.shiny-cta span::before {
+  --size: calc(100% + 1rem);
+  width: var(--size);
+  height: var(--size);
+  box-shadow: inset 0 -1ex 2rem 4px var(--shiny-cta-highlight, #123A6B);
+  opacity: 0;
+}
+
+/* Animate */
+.shiny-cta {
+  --transition: 800ms cubic-bezier(0.25, 1, 0.5, 1);
+  transition: var(--transition);
+  transition-property: --gradient-angle-offset, --gradient-percent, --gradient-shine;
+}
+
+.shiny-cta,
+.shiny-cta::before,
+.shiny-cta::after {
+  animation: var(--animation) var(--duration),
+    var(--animation) calc(var(--duration) / 0.4) reverse paused;
+  animation-composition: add;
+}
+
+.shiny-cta:hover,
+.shiny-cta:hover::before,
+.shiny-cta:hover::after {
+  animation-play-state: running;
+  --gradient-angle-offset: 20deg;
+  --gradient-percent: 8%;
+  --gradient-shine: #ffffff;
+}
+
+@keyframes gradient-angle {
+  to {
+    --gradient-angle: 360deg;
+  }
+}
+
+@keyframes shimmer {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes breathe {
+  from,
+  to {
+    scale: 1;
+  }
+  50% {
+    scale: 1.2;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

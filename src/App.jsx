@@ -11,6 +11,7 @@ import {
   Sparkles
 } from 'lucide-react'
 import { useAuth } from './auth.jsx'
+import { GradientBackground } from './components/ui/oceanic-shimmer.jsx'
 import Login from './pages/Login.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import NewInspection from './pages/NewInspection.jsx'
@@ -30,8 +31,13 @@ function Shell({ children }) {
     }`
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50/70 text-slate-800">
-      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
+    <div className="min-h-screen relative flex flex-col bg-slate-100/60 text-slate-800 selection:bg-indigo-500 selection:text-white">
+      {/* Oceanic Shimmer Ambient Backdrop */}
+      <div className="fixed inset-0 pointer-events-none -z-10 opacity-25 overflow-hidden">
+        <GradientBackground className="w-full h-full" />
+      </div>
+
+      <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 backdrop-blur-md">
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-6">
             <NavLink to="/" className="flex items-center gap-2.5 group">

@@ -519,11 +519,29 @@ export default function LiveScannerModal({
                       </div>
                     )}
 
+                    {lastScanResult.declarations.unit_sale_price && (
+                      <div className="p-2 flex items-start justify-between gap-2">
+                        <span className="text-slate-500 text-[11px]">Unit Sale Price (USP):</span>
+                        <span className="font-semibold text-slate-900 text-right">
+                          {lastScanResult.declarations.unit_sale_price}
+                        </span>
+                      </div>
+                    )}
+
                     {lastScanResult.declarations.date_of_manufacture && (
                       <div className="p-2 flex items-start justify-between gap-2">
                         <span className="text-slate-500 text-[11px]">Date of Mfg / PKD:</span>
                         <span className="font-semibold text-slate-900 text-right">
                           {lastScanResult.declarations.date_of_manufacture}
+                        </span>
+                      </div>
+                    )}
+
+                    {lastScanResult.declarations.expiry_date && (
+                      <div className="p-2 flex items-start justify-between gap-2">
+                        <span className="text-slate-500 text-[11px]">Expiry / Best Before:</span>
+                        <span className="font-semibold text-slate-900 text-right">
+                          {lastScanResult.declarations.expiry_date}
                         </span>
                       </div>
                     )}

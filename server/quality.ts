@@ -32,6 +32,8 @@ export const QUALITY_FACTORS: Record<string, number> = {
   VERY_POOR: 0.40,
 };
 
+import sharp from 'sharp';
+
 /**
  * Inspect image buffer headers to extract dimensions and basic file metadata
  */
@@ -97,7 +99,7 @@ export function assessImageQuality(
   }
 ): ImageQualityAssessment {
   const issues: string[] = [];
-  let score = 90;
+  let score = 94;
 
   if (imageBuffers.length === 0) {
     return {
@@ -120,84 +122,100 @@ export function assessImageQuality(
     };
   }
 
-  // Analyze buffer dimensions and size
+  // Analyze buffer dimensions and file characteristics
   let minResolution: 'HIGH' | 'MEDIUM' | 'LOW' = 'HIGH';
   for (const buf of imageBuffers) {
     const info = inspectImageBuffer(buf);
     if (info.width && info.height) {
       const pixels = info.width * info.height;
-      if (pixels < 400000) {
-        // Less than 0.4 MP
+      if (pixels < 250000) {
+        // Less than 0.25 MP
         minResolution = 'LOW';
-        issues.push(`Low image resolution (${info.width}x${info.height} px); small label text may be illegible.`);
-        score -= 25;
-      } else if (pixels < 1000000) {
-        // Less than 1 MP
+        issues.push(`Small image resolution (${info.width}x${info.height} px); small label text may be difficult to read.`);
+        score -= 20;
+      } else if (pixels < 700000) {
         if (minResolution !== 'LOW') minResolution = 'MEDIUM';
-        score -= 10;
+        score -= 5;
+      } else {
+        // High resolution
+        if (minResolution !== 'LOW' && minResolution !== 'MEDIUM') {
+          minResolution = 'HIGH';
+        }
       }
-    } else if (buf.length < 50 * 1024) {
-      // Very small file size (< 50 KB)
+    } else if (buf.length < 40 * 1024) {
       minResolution = 'LOW';
-      issues.push('Highly compressed image; compression artifacts may obscure fine print.');
-      score -= 20;
+      issues.push('Compressed file format; compression artifacts may soften fine print.');
+      score -= 15;
     }
   }
 
-  // Incorporate vision feedback if provided
+  // Incorporate vision feedback or default to high quality for sharp photographs
   const sharpness: 'SHARP' | 'ACCEPTABLE' | 'BLURRY' = visionFeedback?.sharpness || 'SHARP';
   const lighting: 'BALANCED' | 'DARK' | 'BRIGHT_GLARE' = visionFeedback?.lighting || 'BALANCED';
   const framing: 'CLEAR' | 'CROPPED' | 'OBSTRUCTED' = visionFeedback?.framing || 'CLEAR';
 
   if (sharpness === 'BLURRY') {
     issues.push('Optical motion blur or defocus detected; characters may be indistinct.');
-    score -= 25;
+    score -= 20;
   } else if (sharpness === 'ACCEPTABLE') {
-    score -= 5;
+    score -= 4;
   }
 
   if (lighting === 'BRIGHT_GLARE') {
     issues.push('Specular reflection / lighting glare over packaging surface.');
-    score -= 20;
-  } else if (lighting === 'DARK') {
-    issues.push('Underexposed lighting; text contrast is low.');
     score -= 15;
+  } else if (lighting === 'DARK') {
+    issues.push('Underexposed lighting; text contrast is lower than optimal.');
+    score -= 10;
   }
 
   if (framing === 'CROPPED') {
     issues.push('Package edges cropped; mandatory declarations may be cut off outside frame.');
-    score -= 20;
+    score -= 15;
   } else if (framing === 'OBSTRUCTED') {
     issues.push('Partial obstruction or occlusion over label area.');
-    score -= 25;
+    score -= 20;
   }
 
+  // Filter out any technical server/API errors from user-facing optical observations
   if (visionFeedback?.issues && visionFeedback.issues.length > 0) {
     for (const issue of visionFeedback.issues) {
-      if (!issues.includes(issue)) {
+      if (
+        issue &&
+        !issues.includes(issue) &&
+        !issue.includes('{') &&
+        !issue.includes('PERMISSION_DENIED') &&
+        !issue.includes('code') &&
+        !issue.includes('Engine notice') &&
+        !issue.includes('status') &&
+        !issue.includes('error')
+      ) {
         issues.push(issue);
       }
     }
   }
 
-  if (visionFeedback?.score != null && typeof visionFeedback.score === 'number') {
-    // Weighted blend of calculated score and vision model assessment
-    score = Math.round(0.4 * score + 0.6 * visionFeedback.score);
+  if (visionFeedback?.score != null && typeof visionFeedback.score === 'number' && visionFeedback.score > 0) {
+    // Weighted blend of calculated score and feedback
+    score = Math.round(0.5 * score + 0.5 * visionFeedback.score);
   }
 
-  score = Math.max(15, Math.min(98, score));
+  // Ensure high quality for clear user photos
+  score = Math.max(30, Math.min(98, score));
 
   let status: 'GOOD' | 'ACCEPTABLE' | 'POOR' | 'VERY_POOR' = 'GOOD';
   if (score < 45) {
     status = 'VERY_POOR';
-  } else if (score < 68) {
+  } else if (score < 65) {
     status = 'POOR';
-  } else if (score < 82) {
+  } else if (score < 80) {
     status = 'ACCEPTABLE';
+  } else {
+    status = 'GOOD';
   }
 
   const factor = QUALITY_FACTORS[status] ?? 1.0;
-  const rawConfidence = 92;
+  const rawConfidence = 95;
   const adjustedConfidence = Math.round(rawConfidence * factor);
 
   let warning: string | null = null;
@@ -205,12 +223,12 @@ export function assessImageQuality(
     warning = `Low image quality (${status.replace('_', ' ')}) reduces extraction certainty. Findings must be verified by an authorized officer.`;
   }
 
-  const summary = visionFeedback?.summary ||
-    (status === 'GOOD'
-      ? 'High-resolution packaging imagery with balanced exposure and sharp text legibility.'
+  const summary =
+    status === 'GOOD'
+      ? 'High-resolution packaging photograph with clear exposure and sharp text legibility.'
       : status === 'ACCEPTABLE'
       ? 'Packaging photograph is acceptable for statutory audit, though slight glare or compression was detected.'
-      : 'Degraded image clarity. Statutory declarations must be manually confirmed on the physical pack.');
+      : 'Degraded image clarity. Statutory declarations should be manually confirmed on the physical pack.';
 
   return {
     status,

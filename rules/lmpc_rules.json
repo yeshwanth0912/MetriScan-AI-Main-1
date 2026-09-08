@@ -156,38 +156,6 @@
       ]
     },
     {
-      "rule_id": "r-net-quantity-height",
-      "code": "LM-H-003",
-      "title": "Net quantity is printed at the minimum permitted character height",
-      "description": "Numerals and letters in the net quantity declaration must meet a minimum height determined by the area of the principal display panel.",
-      "category": "readability",
-      "requirement_type": "character_height",
-      "severity": "MAJOR",
-      "field": "net_quantity",
-      "applicability": { "requires_pdp_dimensions": true },
-      "versions": [
-        {
-          "version_id": "rv-net-quantity-height-1",
-          "version": 1,
-          "effective_from": "2011-04-01",
-          "effective_to": null,
-          "active": true,
-          "verification_status": "UNVERIFIED",
-          "source_reference": "PLACEHOLDER TABLE — replace every band below with the height table in the current consolidated Rules before use.",
-          "definition": {
-            "tolerance_mm": 0.2,
-            "min_scale_confidence": 0.5,
-            "thresholds": [
-              { "min_area_cm2": null, "max_area_cm2": 100, "min_height_mm": 1.0 },
-              { "min_area_cm2": 100, "max_area_cm2": 500, "min_height_mm": 2.0 },
-              { "min_area_cm2": 500, "max_area_cm2": 2500, "min_height_mm": 4.0 },
-              { "min_area_cm2": 2500, "max_area_cm2": null, "min_height_mm": 6.0 }
-            ]
-          }
-        }
-      ]
-    },
-    {
       "rule_id": "r-mrp",
       "code": "LM-D-004",
       "title": "Retail sale price (MRP)",
@@ -207,65 +175,6 @@
           "verification_status": "UNVERIFIED",
           "source_reference": "VERIFY against the retail sale price declaration rule in the current consolidated LMPC Rules, 2011.",
           "definition": { "confidence_floor": 0.7 }
-        }
-      ]
-    },
-    {
-      "rule_id": "r-mrp-inclusive",
-      "code": "LM-F-004",
-      "title": "MRP is declared as inclusive of all taxes",
-      "description": "The retail sale price must be declared in the prescribed form indicating that it is inclusive of all taxes.",
-      "category": "format",
-      "requirement_type": "format",
-      "severity": "MAJOR",
-      "field": "mrp",
-      "applicability": {},
-      "versions": [
-        {
-          "version_id": "rv-mrp-inclusive-1",
-          "version": 1,
-          "effective_from": "2011-04-01",
-          "effective_to": null,
-          "active": true,
-          "verification_status": "UNVERIFIED",
-          "source_reference": "VERIFY the prescribed form of the retail sale price declaration in the current Rules.",
-          "definition": {
-            "downgrade_to_review": true,
-            "require_normalized_true": { "inclusive_of_taxes": true },
-            "messages": { "inclusive_of_taxes": "the wording 'inclusive of all taxes' was not detected near the price" }
-          }
-        }
-      ]
-    },
-    {
-      "rule_id": "r-mrp-height",
-      "code": "LM-H-004",
-      "title": "MRP is printed at the minimum permitted character height",
-      "description": "Numerals in the retail sale price declaration must meet the prescribed minimum height.",
-      "category": "readability",
-      "requirement_type": "character_height",
-      "severity": "MAJOR",
-      "field": "mrp",
-      "applicability": { "requires_pdp_dimensions": true },
-      "versions": [
-        {
-          "version_id": "rv-mrp-height-1",
-          "version": 1,
-          "effective_from": "2011-04-01",
-          "effective_to": null,
-          "active": true,
-          "verification_status": "UNVERIFIED",
-          "source_reference": "PLACEHOLDER TABLE — replace with the height table in the current consolidated Rules before use.",
-          "definition": {
-            "tolerance_mm": 0.2,
-            "min_scale_confidence": 0.5,
-            "thresholds": [
-              { "min_area_cm2": null, "max_area_cm2": 100, "min_height_mm": 1.0 },
-              { "min_area_cm2": 100, "max_area_cm2": 500, "min_height_mm": 2.0 },
-              { "min_area_cm2": 500, "max_area_cm2": 2500, "min_height_mm": 4.0 },
-              { "min_area_cm2": 2500, "max_area_cm2": null, "min_height_mm": 6.0 }
-            ]
-          }
         }
       ]
     },
@@ -391,29 +300,6 @@
           "verification_status": "VERIFIED",
           "source_reference": "Internal consistency check, not a statutory requirement. Reported as a data-quality finding.",
           "definition": { "check": "best_before_after_manufacture" }
-        }
-      ]
-    },
-    {
-      "rule_id": "r-consistency-mrp-usp",
-      "code": "LM-C-002",
-      "title": "Unit sale price is consistent with the declared MRP and net quantity",
-      "description": "Detects a misleading unit price that does not follow from the declared MRP and quantity.",
-      "category": "consistency",
-      "requirement_type": "consistency",
-      "severity": "MAJOR",
-      "field": null,
-      "applicability": {},
-      "versions": [
-        {
-          "version_id": "rv-consistency-mrp-usp-1",
-          "version": 1,
-          "effective_from": "2011-04-01",
-          "effective_to": null,
-          "active": true,
-          "verification_status": "VERIFIED",
-          "source_reference": "Internal arithmetic consistency check between declared values.",
-          "definition": { "check": "mrp_matches_unit_sale_price", "tolerance_fraction": 0.05 }
         }
       ]
     },

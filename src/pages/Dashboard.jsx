@@ -1,17 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   BarChart,
   Bar,
   CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
-  YAxis,
-  Area,
-  AreaChart
+  YAxis
 } from 'recharts'
 import {
   ClipboardCheck,
@@ -22,7 +18,6 @@ import {
   Percent,
   PlusCircle,
   ArrowRight,
-  TrendingUp,
   AlertTriangle,
   Package,
   Layers,
@@ -31,6 +26,8 @@ import {
 } from 'lucide-react'
 import { api } from '../api.js'
 import StatusBadge from '../components/StatusBadge.jsx'
+import { GradientBackground } from '../components/ui/oceanic-shimmer.jsx'
+import { ShinyButton } from '../components/ui/shiny-button.jsx'
 
 function MetricCard({ label, value, icon: Icon, tone = 'slate', subtitle, progress }) {
   const colorMap = {
@@ -99,12 +96,13 @@ function MetricCard({ label, value, icon: Icon, tone = 'slate', subtitle, progre
 }
 
 export default function Dashboard() {
-  const [data, setData] = useState({ summary: null, violations: [], trends: [], queue: [] })
+  const navigate = useNavigate()
+  const [data, setData] = useState({ summary: null, violations: [], queue: [] })
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([api.summary(), api.topViolations(), api.trends(30), api.reviewQueue()])
-      .then(([summary, violations, trends, queue]) => setData({ summary, violations, trends, queue }))
+    Promise.all([api.summary(), api.topViolations(), api.reviewQueue()])
+      .then(([summary, violations, queue]) => setData({ summary, violations, queue }))
       .catch((e) => setError(e.message))
   }, [])
 
@@ -127,27 +125,33 @@ export default function Dashboard() {
   return (
     <div className="space-y-4">
       {/* Top Banner & Quick Action */}
-      <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white shadow-elevated flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="space-y-1">
+      <div className="relative overflow-hidden p-5 rounded-2xl bg-slate-950 text-white shadow-elevated flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-slate-800">
+        <div className="absolute inset-0 opacity-45 pointer-events-none">
+          <GradientBackground className="w-full h-full" />
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-900/80 to-indigo-950/70 pointer-events-none" />
+
+        <div className="space-y-1 relative z-10">
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 tracking-wider uppercase">
               Operational Studio
             </span>
-            <span className="text-xs text-slate-300">LMPC Rules 2011 / 2026 Engine</span>
+            <span className="text-xs text-cyan-200/80 font-mono">LMPC Rules 2011 / 2026 Engine</span>
           </div>
-          <h1 className="text-xl font-bold tracking-tight">Legal Metrology Compliance Monitor</h1>
+          <h1 className="text-xl font-extrabold tracking-tight text-white">Legal Metrology Compliance Monitor</h1>
           <p className="text-xs text-slate-300 max-w-xl">
-            Audit packaged commodity declarations, measure minimum character heights, and resolve regulatory discrepancies with verifiable visual evidence.
+            Audit packaged commodity declarations with defaulted domestic origins, automated court-admissible PDF generation, and verified visual bounding boxes.
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Link
-            to="/inspections/new"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all"
+
+        <div className="flex items-center gap-2 shrink-0 relative z-10">
+          <ShinyButton
+            onClick={() => navigate('/inspections/new')}
+            className="!py-2 !px-4 !text-xs !shadow-lg"
           >
-            <PlusCircle className="w-4 h-4" />
+            <PlusCircle className="w-4 h-4 text-emerald-400" />
             <span>New Pack Inspection</span>
-          </Link>
+          </ShinyButton>
         </div>
       </div>
 
@@ -198,104 +202,49 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Charts Row */}
-      <div className="grid lg:grid-cols-3 gap-4">
-        <section className="panel p-4 lg:col-span-2 flex flex-col justify-between">
-          <div className="flex items-center justify-between pb-3 border-b border-rule/60 mb-3">
-            <div>
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                <TrendingUp className="w-3.5 h-3.5 text-slate-500" />
-                Inspection Trends (Last 30 Days)
-              </h2>
-              <p className="text-[11px] text-slate-500">Distribution of compliance verdicts over time</p>
-            </div>
-            <div className="flex items-center gap-3 text-2xs font-medium">
-              <span className="flex items-center gap-1 text-emerald-700">
-                <span className="w-2 h-2 rounded-full bg-emerald-500" /> Compliant
-              </span>
-              <span className="flex items-center gap-1 text-red-700">
-                <span className="w-2 h-2 rounded-full bg-red-500" /> Non-compliant
-              </span>
-              <span className="flex items-center gap-1 text-amber-700">
-                <span className="w-2 h-2 rounded-full bg-amber-500" /> Review
-              </span>
-            </div>
-          </div>
-
-          {data.trends.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 text-xs">
-              <Package className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-              No inspections recorded in this period yet.
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={data.trends} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="compliantGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#059669" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#059669" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="failGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#DC2626" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#DC2626" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="#F1F5F9" strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748B' }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748B' }} tickLine={false} axisLine={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: '8px',
-                    borderColor: '#E2E8F0',
-                    fontSize: '11px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.08)'
-                  }}
-                />
-                <Area type="monotone" dataKey="COMPLIANT" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#compliantGrad)" />
-                <Area type="monotone" dataKey="NON_COMPLIANT" stroke="#DC2626" strokeWidth={2} fillOpacity={1} fill="url(#failGrad)" />
-                <Line type="monotone" dataKey="REVIEW_REQUIRED" stroke="#D97706" strokeWidth={2} dot={false} strokeDasharray="3 3" />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </section>
-
-        <section className="panel p-4 flex flex-col justify-between">
-          <div className="pb-3 border-b border-rule/60 mb-3">
+      {/* Frequent Rule Breaches & Priority Overview */}
+      <section className="panel p-4">
+        <div className="flex items-center justify-between pb-3 border-b border-rule/60 mb-3">
+          <div>
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
               Frequent Rule Breaches
             </h2>
-            <p className="text-[11px] text-slate-500">Most triggered non-compliance rules</p>
+            <p className="text-[11px] text-slate-500">Most triggered statutory non-compliance rules across audited packaged commodities</p>
           </div>
-
-          {data.violations.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 text-xs">
-              <ShieldCheck className="w-8 h-8 mx-auto mb-2 text-emerald-400" />
-              Zero violations recorded. All packages clean!
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={data.violations} layout="vertical" margin={{ left: -10, right: 10, top: 4, bottom: 4 }}>
-                <CartesianGrid stroke="#F1F5F9" horizontal={false} />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: '#64748B' }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
-                <YAxis type="category" dataKey="rule_code" width={78} tick={{ fontSize: 10, fill: '#475569', fontWeight: 500 }} tickLine={false} axisLine={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: '8px',
-                    borderColor: '#E2E8F0',
-                    fontSize: '11px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.08)'
-                  }}
-                  formatter={(v, n, p) => [v, p.payload.title]}
-                />
-                <Bar dataKey="count" fill="#DC2626" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          {data.violations.length > 0 && (
+            <span className="text-2xs font-semibold px-2 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">
+              {data.violations.length} breach categories active
+            </span>
           )}
-        </section>
-      </div>
+        </div>
+
+        {data.violations.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 text-xs">
+            <ShieldCheck className="w-8 h-8 mx-auto mb-2 text-emerald-400" />
+            Zero violations recorded. All packages clean!
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={data.violations} layout="vertical" margin={{ left: -10, right: 16, top: 4, bottom: 4 }}>
+              <CartesianGrid stroke="#F1F5F9" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: '#64748B' }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
+              <YAxis type="category" dataKey="rule_code" width={80} tick={{ fontSize: 10, fill: '#475569', fontWeight: 600 }} tickLine={false} axisLine={false} />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: '8px',
+                  borderColor: '#E2E8F0',
+                  fontSize: '11px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.08)'
+                }}
+                formatter={(v, n, p) => [v, p.payload.title]}
+              />
+              <Bar dataKey="count" fill="#DC2626" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </section>
 
       {/* Review Queue */}
       <section className="panel">

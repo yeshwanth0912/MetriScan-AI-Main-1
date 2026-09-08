@@ -16,10 +16,12 @@ import {
   Loader2,
   FileText,
   Info,
-  Scan
+  Scan,
+  ShieldCheck
 } from 'lucide-react'
 import { api } from '../api.js'
 import LiveScannerModal from '../components/LiveScannerModal.jsx'
+import { ShinyButton } from '../components/ui/shiny-button.jsx'
 
 const IMAGE_TYPES = [
   { id: 'front', label: 'Front / Principal Panel', hint: 'Commodity name, Net quantity' },
@@ -142,7 +144,7 @@ export default function NewInspection() {
     })
   }
 
-  const handleScannerCapture = ({ file, panel, declarations }) => {
+  const handleScannerCapture = ({ file, panel, declarations, text }) => {
     const newItem = {
       file,
       imageType: panel || 'front',
@@ -151,12 +153,21 @@ export default function NewInspection() {
     }
     setFiles((prev) => [...prev, newItem])
 
-    // Auto-fill empty product description or notes from scanner readout
+    // Auto-fill empty product description, brand, or notes from scanner readout
     if (declarations) {
+      let detectedBrand = ''
+      if (declarations.commodity_name) {
+        const firstWord = declarations.commodity_name.split(' ')[0]
+        if (firstWord && firstWord.length > 2 && firstWord === firstWord.toUpperCase()) {
+          detectedBrand = firstWord.charAt(0) + firstWord.slice(1).toLowerCase()
+        }
+      }
+
       setForm((prev) => ({
         ...prev,
+        brand: prev.brand || detectedBrand || '',
         product_name: prev.product_name || declarations.commodity_name || '',
-        notes: prev.notes || (declarations.mrp ? `Scanned live: MRP ${declarations.mrp}, Net Qty: ${declarations.net_quantity || 'N/A'}` : prev.notes)
+        notes: prev.notes || (declarations.mrp ? `Scanned live: MRP ${declarations.mrp}, Net Qty: ${declarations.net_quantity || 'N/A'}${declarations.manufacturer ? `, Mfg: ${declarations.manufacturer.slice(0, 60)}` : ''}` : prev.notes)
       }))
     }
   }
@@ -300,7 +311,7 @@ export default function NewInspection() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-6 pt-3 border-t border-rule/60">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-rule/60">
             <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-slate-700">
               <input
                 type="checkbox"
@@ -310,6 +321,10 @@ export default function NewInspection() {
               />
               <span>Imported Commodity (Requires Importer Declarations & Country of Origin)</span>
             </label>
+            <div className="flex items-center gap-1.5 text-2xs text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200/60">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Default Country of Origin: <strong>India</strong></span>
+            </div>
           </div>
 
           {form.channel === 'ecommerce' && (
@@ -506,14 +521,14 @@ export default function NewInspection() {
               <span className="font-medium">{busy}</span>
             </div>
           ) : (
-            <button
+            <ShinyButton
               type="submit"
-              className="btn w-full !py-2.5 !text-xs bg-slate-900 hover:bg-indigo-700 shadow-sm flex items-center justify-center gap-2"
               disabled={!!busy}
+              className="w-full !py-3 !text-xs !shadow-md"
             >
               <Sparkles className="w-4 h-4 text-emerald-400" />
               <span className="font-semibold">Create Inspection & Run AI Engine</span>
-            </button>
+            </ShinyButton>
           )}
 
           <p className="text-[11px] text-slate-400 text-center">

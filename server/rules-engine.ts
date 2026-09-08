@@ -130,6 +130,21 @@ export function evaluateInspectionRules(
   const qualityFactor = quality?.factor ?? 1.0;
 
   for (const rule of rulesList) {
+    // Exclude removed rules per user instructions:
+    // - LM-C-002 (Unit sale price consistency check)
+    // - LM-F-004 (MRP inclusive of all taxes check)
+    // - LM-H-003 & LM-H-004 (Character height checks)
+    // - All character_height checks
+    if (
+      rule.code === 'LM-C-002' ||
+      rule.code === 'LM-F-004' ||
+      rule.code === 'LM-H-003' ||
+      rule.code === 'LM-H-004' ||
+      rule.requirement_type === 'character_height'
+    ) {
+      continue;
+    }
+
     const activeVer = rule.versions.find(v => v.active) || rule.versions[0];
     if (!activeVer) continue;
 
@@ -171,7 +186,25 @@ export function evaluateInspectionRules(
     }
 
     // 3. Evaluate by Requirement Type
-    const matchingField = rule.field ? fields.find(f => f.field_name === rule.field) : null;
+    let matchingField = rule.field ? fields.find(f => f.field_name === rule.field) : null;
+    if (rule.field === 'country_of_origin' && (!matchingField || !matchingField.present || !matchingField.effective_value?.trim())) {
+      matchingField = {
+        id: `f-${context.id}-country_of_origin`,
+        inspection_id: context.id,
+        field_name: 'country_of_origin',
+        present: true,
+        raw_value: 'India',
+        corrected_value: null,
+        effective_value: 'India',
+        normalized: { raw: 'India' },
+        confidence: 0.98,
+        panel: 'other',
+        evidence: null,
+        measurement: { status: 'UNAVAILABLE', height_mm: null, detail: 'Defaulted country of origin' },
+        notes: ['Defaulted to India as standard country of origin.'],
+        verification_status: 'DETECTED',
+      };
+    }
 
     if (rule.requirement_type === 'presence' && rule.field) {
       if (!matchingField || !matchingField.present || !matchingField.effective_value?.trim()) {

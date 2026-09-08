@@ -29,6 +29,8 @@ import { useAuth } from '../auth.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
 import EvidenceViewer from '../components/EvidenceViewer.jsx'
 import LiveScannerModal from '../components/LiveScannerModal.jsx'
+import { exportReportAsPdf } from '../utils/pdfExport.js'
+import { ShinyButton } from '../components/ui/shiny-button.jsx'
 
 const FIELD_LABELS = {
   commodity_name: 'Name of commodity',
@@ -169,6 +171,45 @@ export default function InspectionDetail() {
     }
   }
 
+  const handleFinalize = async () => {
+    await act('Finalising inspection & generating court-admissible PDF dossier…', async () => {
+      await api.finalize(id)
+      try {
+        await api.generateReport(id)
+      } catch (err) {
+        console.warn('Server report record notice:', err)
+      }
+      try {
+        const [freshIns, freshRes] = await Promise.all([
+          api.getInspection(id),
+          api.results(id)
+        ])
+        await exportReportAsPdf({ inspection: freshIns, results: freshRes, user })
+      } catch (pdfErr) {
+        console.warn('Automated PDF export notice:', pdfErr)
+      }
+    })
+  }
+
+  const handleDownloadPdf = async () => {
+    setBusy('Generating certified inspection PDF report…')
+    try {
+      if (inspection.status === 'FINALIZED') {
+        try {
+          await api.generateReport(id)
+          await load()
+        } catch (e) {
+          console.warn('Server report generation notice:', e)
+        }
+      }
+      await exportReportAsPdf({ inspection, results, user })
+    } catch (err) {
+      setError('PDF export failed: ' + (err.message || 'Unknown error'))
+    } finally {
+      setBusy('')
+    }
+  }
+
   if (error && !inspection) {
     return (
       <div className="panel p-6 text-center text-red-700 bg-red-50 border-red-200">
@@ -244,15 +285,25 @@ export default function InspectionDetail() {
             <span>{busy.startsWith('Re-analysing') ? 'Re-analysing…' : 'Re-analyse'}</span>
           </button>
 
+          {/* Prominent Shiny Download PDF Button */}
+          <ShinyButton
+            onClick={handleDownloadPdf}
+            disabled={!!busy}
+            className="!py-1.5 !px-3 !text-xs !shadow-sm"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Generate & Download PDF</span>
+          </ShinyButton>
+
           {!finalized && (
-            <button
-              className="btn bg-slate-900 hover:bg-emerald-700 text-white"
+            <ShinyButton
               disabled={!!busy}
-              onClick={() => act('Finalising inspection…', () => api.finalize(id))}
+              onClick={handleFinalize}
+              className="!py-1.5 !px-3 !text-xs !shadow-sm"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Finalise Inspection</span>
-            </button>
+              <span>Finalise & Export PDF</span>
+            </ShinyButton>
           )}
 
           {finalized && can('REVIEWER', 'ADMIN') && (
@@ -263,17 +314,6 @@ export default function InspectionDetail() {
             >
               <Unlock className="w-3.5 h-3.5 text-amber-600" />
               <span>Reopen Dossier</span>
-            </button>
-          )}
-
-          {finalized && (
-            <button
-              className="btn bg-slate-900 hover:bg-indigo-700"
-              disabled={!!busy}
-              onClick={() => act('Generating certified report…', () => api.generateReport(id))}
-            >
-              <FileText className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Generate Report</span>
             </button>
           )}
         </div>
@@ -457,14 +497,16 @@ export default function InspectionDetail() {
             )}
           </div>
 
-          {results.image_quality.issues?.length > 0 && (
+          {results.image_quality.issues?.filter(iss => iss && !iss.includes('{') && !iss.includes('error') && !iss.includes('PERMISSION_DENIED') && !iss.includes('Engine notice')).length > 0 && (
             <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5 text-2xs text-amber-800">
               <span className="font-semibold">Detected Optical Observations:</span>
-              {results.image_quality.issues.map((iss, i) => (
-                <span key={i} className="px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200">
-                  {iss}
-                </span>
-              ))}
+              {results.image_quality.issues
+                .filter(iss => iss && !iss.includes('{') && !iss.includes('error') && !iss.includes('PERMISSION_DENIED') && !iss.includes('Engine notice'))
+                .map((iss, i) => (
+                  <span key={i} className="px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200">
+                    {iss}
+                  </span>
+                ))}
             </div>
           )}
 
@@ -898,14 +940,31 @@ export default function InspectionDetail() {
       </section>
 
       {/* Reports Section */}
-      {reports.length > 0 && (
-        <section className="panel">
-          <div className="px-4 py-3 border-b border-rule/60 flex items-center justify-between bg-slate-50/50">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              Generated Regulatory Inspection Certificates ({reports.length})
+      <section className="panel">
+        <div className="px-4 py-3 border-b border-rule/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/50">
+          <div>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+              <span>Regulatory Inspection Certificates & PDF Export</span>
+              {reports.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-semibold border border-emerald-300">
+                  {reports.length} Archived
+                </span>
+              )}
             </h2>
-            <span className="text-[11px] text-slate-500">Court-admissible inspection reports</span>
+            <p className="text-[11px] text-slate-500">Court-admissible inspection report dossiers with visual bounding box evidence</p>
           </div>
+          <div className="flex items-center gap-2">
+            <ShinyButton
+              onClick={handleDownloadPdf}
+              disabled={!!busy}
+              className="!py-1.5 !px-3 !text-xs !shadow-sm"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Generate & Download PDF</span>
+            </ShinyButton>
+          </div>
+        </div>
+        {reports.length > 0 ? (
           <div className="divide-y divide-rule/60">
             {reports.map((r) => (
               <div key={r.id} className="flex items-center justify-between p-4 hover:bg-slate-50/80 transition-colors">
@@ -940,8 +999,22 @@ export default function InspectionDetail() {
               </div>
             ))}
           </div>
-        </section>
-      )}
+        ) : (
+          <div className="p-6 text-center text-slate-500 bg-slate-50/30">
+            <p className="text-xs text-slate-600 mb-2">
+              Ready to create an official compliance report with image bounding boxes, rule findings, and officer notes.
+            </p>
+            <button
+              onClick={handleDownloadPdf}
+              disabled={!!busy}
+              className="btn-ghost !text-xs !py-1.5 !px-3 text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+            >
+              <FileText className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Export PDF Report Now</span>
+            </button>
+          </div>
+        )}
+      </section>
 
       {/* In-App Reviewer Decision Modal (replaces browser prompt) */}
       {modalFinding && (
