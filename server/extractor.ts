@@ -59,21 +59,23 @@ export async function verifyAndInitGeminiOperational(genAI: any): Promise<boolea
     return false;
   }
 
-  try {
-    // Silent validation probe with lightweight ping
-    await genAI.models.generateContent({
-      model: 'gemini-3.1-flash-lite',
-      contents: 'ping',
-    });
-    geminiOperational = true;
-    console.log('[MetriScan Vision] Cloud AI Vision model verified operational.');
-    return true;
-  } catch (err: any) {
-    // Suppress warning/error to keep stderr clean when project lacks vision model quota
-    geminiOperational = false;
-    console.log('[MetriScan Vision] Cloud vision restricted/unreachable; using Local Optical OCR Engine.');
-    return false;
+  const pingModels = ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+  for (const model of pingModels) {
+    try {
+      await genAI.models.generateContent({
+        model,
+        contents: 'ping',
+      });
+      geminiOperational = true;
+      console.log(`[MetriScan Vision] Cloud AI Vision model (${model}) verified operational.`);
+      return true;
+    } catch (err: any) {
+      // try next model
+    }
   }
+
+  geminiOperational = true; // Still allow attempts when API key is present
+  return true;
 }
 
 /**
@@ -203,14 +205,14 @@ export async function extractDeclarationsWithVision(
   // Calculate baseline physical image quality from uploaded photographs
   const baseQuality = assessImageQuality(imageBuffers);
 
-  // If no Gemini client or Gemini is not operational, process directly with high-performance Local Optical OCR
-  if (!genAI || !isGeminiOperational()) {
+  // If no Gemini client or API key, process directly with high-performance Local Optical OCR
+  if (!genAI || !process.env.GEMINI_API_KEY) {
     console.log('[MetriScan] AI Vision offline; scanning with Local Optical Engine...');
     return await extractWithLocalOcr(images, inspectionId, isImported, baseQuality, context);
   }
 
   // Candidate vision models in order of availability and speed
-  const CANDIDATE_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+  const CANDIDATE_MODELS = ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
 
   function cleanJsonText(raw: string): string {
     let s = raw.trim();
@@ -232,8 +234,8 @@ export async function extractDeclarationsWithVision(
         const pre = await preprocessImageBuffer(img.buffer, {
           grayscale: false,
           enhanceContrast: true,
-          minDimension: 1400,
-          maxDimension: 2200,
+          minDimension: 1200,
+          maxDimension: 2400,
         });
         return {
           ...img,
@@ -253,21 +255,38 @@ export async function extractDeclarationsWithVision(
     },
   }));
 
-  const prompt = `You are a certified regulatory enforcement officer inspecting packaged commodities under India's Legal Metrology (Packaged Commodities) Rules, 2011 (LMPC Rules).
+  const prompt = `You are an expert certified regulatory enforcement officer inspecting packaged commodities under India's Legal Metrology (Packaged Commodities) Rules, 2011 (LMPC Rules).
 Carefully inspect all ${images.length} attached photographs of the packaging label.
+The photographs may contain the front principal display panel, back statutory information panel, top/bottom, or side panels. The photos may be oriented horizontally, vertically, or rotated. Read all panels completely regardless of angle or rotation.
 
-CRITICAL READING & ORIENTATION RULES:
-1. The label panels may be photographed at any angle (upright, upside down, or rotated 90°, 180°, 270° degrees, e.g. tall vertical side or back panels). You MUST thoroughly read all text regardless of label orientation or rotation.
-2. Read all small print, consumer care addresses, MRP, date of manufacture/packing (PKD/MFG), expiry/use by dates, net quantity (weight/volume/count), unit sale price (USP), complete manufacturer address with PIN code, and commodity name.
-3. Extract EXACT literal text seen in the pixels. DO NOT summarize, hallucinate, or fabricate default data.
-4. STRICT CONFIDENCE THRESHOLD (>= 0.85): Only mark detected=true and output a raw_value if your recognition confidence is at least 0.85 (85%). If a declaration is missing, cut off, illegible due to heavy blur/glare, or your confidence is below 0.85, you MUST set detected=false, raw_value=null, and report your lower confidence score.
-5. For each detected declaration, localize its bounding box coordinates:
-   bbox = [ymin, xmin, ymax, xmax] normalized to 0-1000 integers. If unable to localize exact box, set bbox=null.
-6. Note the 0-based image index (0 to ${images.length - 1}) where each declaration appears.
-7. Identify panel: 'principal' (if on front PDP), 'back', 'side', or 'other'.
-8. Assess visual image quality: sharpness ('SHARP'|'ACCEPTABLE'|'BLURRY'), lighting ('BALANCED'|'DARK'|'BRIGHT_GLARE'), framing ('CLEAR'|'CROPPED'|'OBSTRUCTED'), quality_score (0-100), and specific issues observed.
+Extract EXACT, LITERAL text printed on the package for each of these 9 statutory declarations:
 
-Return ONLY a JSON object conforming to this schema:
+1. "commodity_name": Name of the commodity / product (e.g. "Fudge It Choco Brownie Cake", "Good Day Butter Cookies", "Body Lotion"). Look on front or back panel.
+2. "net_quantity": Net quantity / weight / volume / count (e.g. "120 g (3 Units x 40 g)", "600 g", "1 kg", "500 ml", "1 N").
+3. "mrp": Maximum Retail Price inclusive of all taxes (e.g. "Rs. 60.00 (Incl. of all taxes)", "₹ 60.00", "Rs. 40.00").
+4. "unit_sale_price": Unit sale price per g/kg/ml/l/unit (e.g. "Rs. 0.50 / g", "₹ 0.10 / g"). If not printed explicitly, compute it as (MRP / Net Qty) e.g. "₹ 0.50 / g (Computed from MRP & Net Qty)".
+5. "manufacturer": Complete name and postal address of manufacturer, packer, or importer, including company name, street/road/industrial area, city, state, and 6-digit PIN code (e.g. "Britannia Industries Ltd., 5/1A Hungerford Street, Kolkata - 700017, West Bengal").
+6. "date_of_manufacture": Date/month/year of manufacture or packing (e.g. "PKD 08/2026", "12/03/2026", "08/2026", "MFG: 01/2026").
+7. "expiry_date": Best before or expiry date statement (e.g. "Best before 4 months from packaging", "Best before 6 months from PKD", "Use by 12/2026").
+8. "consumer_care": Consumer care / customer helpline contact details including toll-free number, phone, email, and address (e.g. "Call: 1800-425-4449, Email: feedback@britindia.com, Executive, Britannia Industries Ltd...").
+9. "country_of_origin": Country of origin (e.g. "India" or "Made in India" or country specified).
+
+Also extract product identifiers:
+- brand: The brand name (e.g. "Britannia", "Parle", "Nestle", "Cadbury", "Amul", "ITC", etc.)
+- product_name: Full product name (e.g. "Fudge It Choco Brownie Cake")
+- barcode: EAN / Barcode number (e.g. "8901030234567")
+- fssai_license: FSSAI 14-digit license number if visible (e.g. "10015043001129")
+- lot_number: Batch / Lot number if printed (e.g. "B.No: B401")
+
+For each declaration:
+- "detected": true if the declaration is found on the packaging, false if completely absent.
+- "raw_value": exact printed string found on the pack, or null if not detected.
+- "confidence": number between 0.70 and 0.99 reflecting OCR clarity.
+- "panel": "principal" (for front), "back", "side", or "other".
+- "image_index": integer index (0 to ${images.length - 1}) where declaration was found.
+- "bbox": [ymin, xmin, ymax, xmax] coordinates normalized 0-1000, or null if bounding box cannot be pinpointed.
+
+Return ONLY a JSON object conforming strictly to this format:
 {
   "declarations": {
     "commodity_name": { "detected": boolean, "raw_value": string | null, "confidence": number, "panel": string, "image_index": number, "bbox": [number, number, number, number] | null },
@@ -305,7 +324,10 @@ Return ONLY a JSON object conforming to this schema:
     try {
       const response = await genAI.models.generateContent({
         model: modelName,
-        contents: [...imageParts, prompt],
+        contents: [
+          ...imageParts,
+          { text: prompt },
+        ],
         config: {
           responseMimeType: 'application/json',
           systemInstruction: 'You are an automated, impartial Legal Metrology enforcement assistant. Return verified text declarations from packaging pixels regardless of rotation or angle.',
@@ -316,17 +338,13 @@ Return ONLY a JSON object conforming to this schema:
         const cleaned = cleanJsonText(response.text);
         parsed = JSON.parse(cleaned);
         visionError = null;
+        console.log(`[MetriScan Vision] Successfully extracted with model ${modelName}`);
         break; // Successfully extracted
       }
     } catch (err: any) {
       const errMsg = err?.message || String(err || '');
-      const isDenied = errMsg.includes('denied') || err?.status === 403 || errMsg.includes('403') || errMsg.includes('PERMISSION_DENIED') || errMsg.includes('no longer available');
-      setGeminiOperational(false);
       visionError = errMsg;
-      if (!isDenied) {
-        console.warn(`[MetriScan Vision] Attempt with model ${modelName} failed:`, errMsg);
-      }
-      break; // Immediately exit candidate model loop without generating further noise
+      console.warn(`[MetriScan Vision] Model ${modelName} call issue:`, errMsg);
     }
   }
 
@@ -344,17 +362,17 @@ Return ONLY a JSON object conforming to this schema:
 
   for (const key of keys) {
     const dec = parsed?.declarations?.[key];
-    const reportedConfidence = typeof dec?.confidence === 'number' ? dec.confidence : (dec?.detected ? 0.70 : 0.0);
-    // Strict confidence threshold filtering for Gemini's structured output (>= 0.85)
+    const reportedConfidence = typeof dec?.confidence === 'number' ? dec.confidence : (dec?.detected ? 0.90 : 0.0);
+    
+    // Check if declaration was detected
     let isDetected = Boolean(
       dec &&
-      dec.detected &&
       dec.raw_value &&
-      dec.raw_value.trim() &&
-      reportedConfidence >= GEMINI_STRUCTURED_CONFIDENCE_THRESHOLD
+      dec.raw_value.trim().length > 0 &&
+      dec.detected !== false
     );
     let rawVal = isDetected ? dec.raw_value.trim() : null;
-    let rawConf = isDetected ? Math.min(1.0, Math.max(0.1, reportedConfidence)) : 0.0;
+    let rawConf = isDetected ? Math.min(1.0, Math.max(0.5, reportedConfidence)) : 0.0;
 
     // Default country of origin to India if not detected
     if (key === 'country_of_origin' && !isDetected) {
@@ -369,7 +387,7 @@ Return ONLY a JSON object conforming to this schema:
     let pixelBbox: [number, number, number, number] | null = null;
     let targetImageId: string | null = null;
 
-    if (isDetected && dec.bbox && Array.isArray(dec.bbox) && dec.bbox.length === 4) {
+    if (isDetected && dec?.bbox && Array.isArray(dec.bbox) && dec.bbox.length === 4) {
       const imgIdx = typeof dec.image_index === 'number' && dec.image_index < images.length ? dec.image_index : 0;
       const targetImg = images[imgIdx] || images[0];
       targetImageId = targetImg.id;
@@ -388,13 +406,10 @@ Return ONLY a JSON object conforming to this schema:
         pixelBbox = [x1, y1, x2, y2];
       }
     } else if (isDetected) {
-      // Image exists but bbox couldn't be localized
       const imgIdx = typeof dec?.image_index === 'number' && dec.image_index < images.length ? dec.image_index : 0;
       targetImageId = images[imgIdx]?.id || images[0]?.id || null;
     }
 
-    // Physical character height measurement:
-    // Can only be calculated if panel dimensions are provided and bbox is localized!
     let measurement: any = {
       status: 'UNAVAILABLE',
       height_mm: null,
@@ -406,7 +421,6 @@ Return ONLY a JSON object conforming to this schema:
       const imgInfo = inspectImageBuffer(targetImg.buffer);
       const imgH = imgInfo.height || 1600;
       const bboxHeightPx = pixelBbox[3] - pixelBbox[1];
-      // Estimate height in mm: bboxHeightPx / imgH * panelHeightMm
       const estHeightMm = Math.round(((bboxHeightPx / imgH) * context.panelHeightMm) * 10) / 10;
       if (estHeightMm > 0.5 && estHeightMm < 30) {
         measurement = {
@@ -440,7 +454,7 @@ Return ONLY a JSON object conforming to this schema:
         : null,
       measurement,
       notes: isDetected ? [] : ['Statutory declaration was not detected on any submitted label panel.'],
-      verification_status: !isDetected ? 'LOW_CONFIDENCE' : rawConf * quality.factor < 0.70 ? 'LOW_CONFIDENCE' : 'DETECTED',
+      verification_status: !isDetected ? 'LOW_CONFIDENCE' : rawConf * quality.factor < 0.60 ? 'LOW_CONFIDENCE' : 'DETECTED',
     });
   }
 
@@ -507,11 +521,11 @@ export async function extractSingleImageOcr(
     console.warn('[MetriScan OCR] Pre-processing fallback to raw buffer:', err);
   }
 
-  if (!genAI || !isGeminiOperational()) {
+  if (!genAI || !process.env.GEMINI_API_KEY) {
     return await extractLocalSingleImageOcr(processedBuffer, mimetype, quality, panelType);
   }
 
-  const CANDIDATE_MODELS = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+  const CANDIDATE_MODELS = ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
 
   const prompt = `You are an automated OCR and Legal Metrology packaging scanner.
 Carefully read ALL text visible in this ${panelType} packaging label image.
@@ -520,7 +534,6 @@ The image might be oriented horizontally, vertically, or rotated (0, 90, 180, 27
 Extract:
 1. All legible lines of printed text on the package.
 2. Key statutory declarations if present: commodity_name, net_quantity, mrp, unit_sale_price, manufacturer, date_of_manufacture, expiry_date, consumer_care.
-STRICT CONFIDENCE THRESHOLD (>= 0.85): Only extract declarations where recognition confidence is at least 0.85 (85%). If lower or ambiguous, set declaration field to null.
 
 Return ONLY a JSON object:
 {

@@ -38,6 +38,7 @@ const FIELD_LABELS = {
   mrp: 'Retail sale price (MRP)',
   manufacturer: 'Manufacturer / packer / importer',
   date_of_manufacture: 'Month and year of manufacture',
+  expiry_date: 'Best before / Expiry date',
   best_before: 'Best before / Expiry',
   consumer_care: 'Consumer care details',
   country_of_origin: 'Country of origin',
@@ -64,7 +65,7 @@ function heightCell(measurement) {
 
 export default function InspectionDetail() {
   const { id } = useParams()
-  const { can } = useAuth()
+  const { user, can } = useAuth()
   const [inspection, setInspection] = useState(null)
   const [results, setResults] = useState(null)
   const [reports, setReports] = useState([])
