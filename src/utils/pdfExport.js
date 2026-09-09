@@ -482,9 +482,8 @@ export async function exportReportAsPdf({ inspection, results, user = null }) {
   doc.setFontSize(6.8);
   doc.setTextColor(15, 23, 42); // deep slate-900 (sharp, legible)
   doc.text('STATUTORY DECLARATION', margin + 3, y + 4.5);
-  doc.text('DECLARED PACK VALUE / EXTRACTED TEXT', margin + 48, y + 4.5);
-  doc.text('PANEL', margin + 120, y + 4.5);
-  doc.text('HEIGHT', margin + 138, y + 4.5);
+  doc.text('DECLARED PACK VALUE / EXTRACTED TEXT', margin + 50, y + 4.5);
+  doc.text('PANEL', margin + 135, y + 4.5);
   doc.text('STATUS', margin + 158, y + 4.5);
 
   y += 6.5;
@@ -520,14 +519,11 @@ export async function exportReportAsPdf({ inspection, results, user = null }) {
     doc.setFontSize(6.8);
     doc.setTextColor(15, 23, 42); // high contrast value text
     const val = f.effective_value || f.raw_value || (f.present ? 'Declared' : 'NOT DECLARED / ABSENT');
-    doc.text(val.length > 42 ? val.substring(0, 40) + '…' : val, margin + 48, y + 4.8);
 
+    doc.text(val.length > 55 ? val.substring(0, 52) + '…' : val, margin + 50, y + 4.8);
     doc.setFontSize(6.2);
     doc.setTextColor(51, 65, 85); // slate-700
-    doc.text((f.panel || 'other').toUpperCase(), margin + 120, y + 4.8);
-
-    const heightMm = f.measurement?.height_mm ? `${f.measurement.height_mm.toFixed(1)} mm` : 'no scale';
-    doc.text(heightMm, margin + 138, y + 4.8);
+    doc.text((f.panel || 'other').toUpperCase(), margin + 135, y + 4.8);
 
     if (f.present && f.effective_value && f.effective_value !== 'NOT DECLARED') {
       doc.setTextColor(21, 128, 61); // clear green

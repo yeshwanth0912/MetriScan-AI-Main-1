@@ -713,12 +713,14 @@ function generateEvidenceSvg(imageId: string, inspection: Inspection) {
       `;
     }).join('\n')}
 
+    ${inspection.status !== 'FINALIZED' ? `
     <!-- Fiducial Scale Marker (Bottom Left) -->
     <g transform="translate(140, 1380)">
       <rect x="0" y="0" width="80" height="80" fill="#1B2A3A" />
       <rect x="20" y="20" width="40" height="40" fill="#FFFFFF" />
       <text x="95" y="48" font-family="'IBM Plex Mono', monospace" font-size="18" fill="#5B6B7B">20mm Scale Marker</text>
     </g>
+    ` : ''}
 
     <!-- Inspection Stamp (Bottom Right) -->
     <g transform="translate(820, 1380)">

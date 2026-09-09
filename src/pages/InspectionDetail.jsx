@@ -54,18 +54,6 @@ function confidenceTone(value) {
   return 'text-amber-800 bg-amber-50 border-amber-200'
 }
 
-function heightCell(measurement) {
-  if (!measurement) return <span className="text-slate-400 text-2xs">—</span>
-  if (measurement.status === 'MEASURED') {
-    return (
-      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-2xs font-mono font-medium bg-slate-100 text-slate-800 border border-slate-200">
-        {measurement.height_mm?.toFixed(2)} mm
-      </span>
-    )
-  }
-  return <span className="text-slate-400 text-2xs italic" title={measurement.detail}>no scale</span>
-}
-
 export default function InspectionDetail() {
   const { id } = useParams()
   const { user, can } = useAuth()
@@ -711,7 +699,6 @@ export default function InspectionDetail() {
                   <th className="th">Pack Value</th>
                   <th className="th">Confidence</th>
                   <th className="th">Panel</th>
-                  <th className="th">Height</th>
                   <th className="th text-right">Inspect</th>
                 </tr>
               </thead>
@@ -771,10 +758,6 @@ export default function InspectionDetail() {
                         {f.panel || '—'}
                       </td>
 
-                      <td className="td">
-                        {heightCell(f.measurement)}
-                      </td>
-
                       <td className="td text-right">
                         <button
                           type="button"
@@ -811,7 +794,7 @@ export default function InspectionDetail() {
               <Eye className="w-8 h-8 mx-auto mb-2 text-slate-300" />
               <p className="text-xs font-medium text-slate-700">Select a declaration from the table</p>
               <p className="text-[11px] text-slate-400 mt-1 max-w-xs mx-auto">
-                Inspect the photograph bounding box, review character height, or adjust values before signing off.
+                Inspect the photograph bounding box, review extracted text, or adjust values before signing off.
               </p>
             </div>
           ) : !evidence ? (
@@ -829,21 +812,6 @@ export default function InspectionDetail() {
                   ? `Raw OCR Output: “${evidence.field.evidence.ocr_text}”`
                   : null}
               />
-
-              {/* Character Height Measurement Details */}
-              {evidence.measurement && (
-                <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-700">
-                  <div className="font-semibold text-slate-900 flex items-center gap-1.5 mb-0.5">
-                    <Scale className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Physical Character Height Analysis</span>
-                  </div>
-                  <div className="text-slate-600 text-[11px]">
-                    {evidence.measurement.status === 'MEASURED'
-                      ? `Measured at ${evidence.measurement.height_mm.toFixed(2)} mm via ${evidence.measurement.method} (${evidence.measurement.scale?.px_per_mm} px/mm calibrated scale).`
-                      : evidence.measurement.detail}
-                  </div>
-                </div>
-              )}
 
               {/* Corrected Value Form */}
               <div className="p-3 rounded-xl border border-slate-200 bg-white shadow-subtle">
