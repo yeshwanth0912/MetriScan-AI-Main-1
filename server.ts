@@ -2020,7 +2020,7 @@ async function startServer() {
     console.log(`[MetriScan] Server running on http://0.0.0.0:${PORT}`);
     // Pre-warm local optical OCR engine in background for instant first scans
     warmupOcrEngine();
-    // Silently verify if cloud Gemini has access quota or project permission
+    // Initialize Gemini API client state without making quota-consuming startup pings
     verifyAndInitGeminiOperational(getGenAI()).catch(() => {});
   });
 }

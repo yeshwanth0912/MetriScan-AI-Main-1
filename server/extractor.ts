@@ -44,13 +44,23 @@ const MANDATORY_FIELD_KEYS = [
 ] as const;
 
 let geminiOperational: boolean = false;
+let quotaExceededCooldownUntil: number = 0;
 
 export function setGeminiOperational(status: boolean): void {
   geminiOperational = status;
 }
 
 export function isGeminiOperational(): boolean {
-  return geminiOperational === true;
+  return geminiOperational === true && Date.now() > quotaExceededCooldownUntil;
+}
+
+export function setQuotaCooldown(durationMs: number = 5 * 60 * 1000): void {
+  quotaExceededCooldownUntil = Date.now() + durationMs;
+  geminiOperational = false;
+}
+
+export function isQuotaExceeded(): boolean {
+  return Date.now() < quotaExceededCooldownUntil;
 }
 
 export async function verifyAndInitGeminiOperational(genAI: any): Promise<boolean> {
@@ -58,23 +68,9 @@ export async function verifyAndInitGeminiOperational(genAI: any): Promise<boolea
     geminiOperational = false;
     return false;
   }
-
-  const pingModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.1-pro-preview'];
-  for (const model of pingModels) {
-    try {
-      await genAI.models.generateContent({
-        model,
-        contents: 'ping',
-      });
-      geminiOperational = true;
-      console.log(`[MetriScan Vision] Cloud AI Vision model (${model}) verified operational.`);
-      return true;
-    } catch (err: any) {
-      // silently proceed to next candidate model
-    }
-  }
-
-  geminiOperational = true; // Still allow attempts when API key is present
+  // Initialize operational status without making quota-consuming startup pings
+  geminiOperational = true;
+  console.log('[MetriScan Vision] Gemini API key configured and ready.');
   return true;
 }
 
@@ -205,18 +201,25 @@ export async function extractDeclarationsWithVision(
   // Calculate baseline physical image quality from uploaded photographs
   const baseQuality = assessImageQuality(imageBuffers);
 
-  // If no Gemini client or API key, process directly with high-performance Local Optical OCR
-  if (!genAI || !process.env.GEMINI_API_KEY) {
-    console.log('[MetriScan] AI Vision offline; scanning with Local Optical Engine...');
-    return await extractWithLocalOcr(images, inspectionId, isImported, baseQuality, context);
+  // If no Gemini client, API key, or if currently in quota cooldown, process directly with Local Optical OCR
+  if (!genAI || !process.env.GEMINI_API_KEY || isQuotaExceeded()) {
+    if (isQuotaExceeded()) {
+      console.log('[MetriScan Vision] Cloud quota cooldown active; running high-speed Local Optical Engine...');
+    } else {
+      console.log('[MetriScan Vision] AI Vision offline; scanning with Local Optical Engine...');
+    }
+    const localResult = await extractWithLocalOcr(images, inspectionId, isImported, baseQuality, context);
+    if (isQuotaExceeded() && !localResult.imageQuality.warning) {
+      localResult.imageQuality.warning = 'Cloud AI quota limit reached; packaging extracted via high-precision Local Optical OCR engine.';
+    }
+    return localResult;
   }
 
-  // Candidate vision models in order of availability, speed, and multimodality
+  // Candidate vision models in order of quota efficiency, availability, and multimodality
   const CANDIDATE_MODELS = [
-    'gemini-3.8-flash',
     'gemini-3.1-flash-lite',
+    'gemini-3.8-flash',
     'gemini-flash-latest',
-    'gemini-3.1-pro-preview',
   ];
 
   function cleanJsonText(raw: string): string {
@@ -349,19 +352,30 @@ Return ONLY a JSON object conforming strictly to this format:
     } catch (err: any) {
       const errMsg = err?.message || String(err || '');
       visionError = errMsg;
+      const isQuota = errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('exceeded your current quota');
       const isTemporaryDemand = errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE');
-      if (isTemporaryDemand) {
-        console.log(`[MetriScan Vision] Model ${modelName} experiencing temporary demand (503), switching to next candidate model...`);
+
+      if (isQuota) {
+        console.info(`[MetriScan Vision] API rate limit/quota reached on model ${modelName}. Setting cooldown and switching to Local Optical Engine.`);
+        setQuotaCooldown(5 * 60 * 1000);
+        break; // Quota applies across cloud project models; break immediately to avoid repeated 429s
+      } else if (isTemporaryDemand) {
+        console.info(`[MetriScan Vision] Model ${modelName} experiencing temporary demand (503), switching to next candidate model...`);
       } else {
-        console.log(`[MetriScan Vision] Model ${modelName} call issue (${errMsg.slice(0, 100)}), trying next candidate model...`);
+        const brief = errMsg.includes('403') || errMsg.includes('denied') ? 'Access Restricted' : 'Service Temporarily Unavailable';
+        console.info(`[MetriScan Vision] Model ${modelName} unavailable (${brief}), trying next candidate model...`);
       }
     }
   }
 
   // If cloud vision API call did not succeed, seamlessly fallback to Local Optical Engine
   if (!parsed) {
-    console.log('[MetriScan Vision] Cloud vision unavailable; processing with Local Optical Engine with OCR...');
-    return await extractWithLocalOcr(images, inspectionId, isImported, baseQuality, context);
+    console.log('[MetriScan Vision] Seamlessly processing inspection with Local Optical OCR Engine...');
+    const localResult = await extractWithLocalOcr(images, inspectionId, isImported, baseQuality, context);
+    if (visionError && (visionError.includes('429') || visionError.includes('quota') || visionError.includes('RESOURCE_EXHAUSTED') || visionError.includes('exceeded your current quota'))) {
+      localResult.imageQuality.warning = 'Cloud AI quota limit reached on API key; packaging extracted via high-precision Local Optical OCR engine.';
+    }
+    return localResult;
   }
 
   // Assess quality blending buffer analysis with vision output
@@ -531,15 +545,14 @@ export async function extractSingleImageOcr(
     console.warn('[MetriScan OCR] Pre-processing fallback to raw buffer:', err);
   }
 
-  if (!genAI || !process.env.GEMINI_API_KEY) {
+  if (!genAI || !process.env.GEMINI_API_KEY || isQuotaExceeded()) {
     return await extractLocalSingleImageOcr(processedBuffer, mimetype, quality, panelType);
   }
 
   const CANDIDATE_MODELS = [
-    'gemini-3.8-flash',
     'gemini-3.1-flash-lite',
+    'gemini-3.8-flash',
     'gemini-flash-latest',
-    'gemini-3.1-pro-preview',
   ];
 
   const prompt = `You are an automated OCR and Legal Metrology packaging scanner.
@@ -598,11 +611,18 @@ Return ONLY a JSON object:
       }
     } catch (err: any) {
       lastErr = err?.message || 'Model call failed';
+      const isQuota = lastErr.includes('429') || lastErr.includes('quota') || lastErr.includes('RESOURCE_EXHAUSTED') || lastErr.includes('exceeded your current quota');
       const isTemporaryDemand = lastErr.includes('503') || lastErr.includes('high demand') || lastErr.includes('UNAVAILABLE');
-      if (isTemporaryDemand) {
-        console.log(`[MetriScan OCR] Model ${model} experiencing temporary demand (503), switching to next candidate model...`);
+
+      if (isQuota) {
+        console.info(`[MetriScan OCR] API rate limit/quota reached on model ${model}. Setting cooldown and falling back to Local Optical Scanner.`);
+        setQuotaCooldown(5 * 60 * 1000);
+        break;
+      } else if (isTemporaryDemand) {
+        console.info(`[MetriScan OCR] Model ${model} experiencing temporary demand (503), trying next model...`);
       } else {
-        console.log(`[MetriScan OCR] Model ${model} note (${lastErr.slice(0, 100)}), trying next candidate model...`);
+        const brief = lastErr.includes('403') || lastErr.includes('denied') ? 'Access Restricted' : 'Temporary Issue';
+        console.info(`[MetriScan OCR] Model ${model} note (${brief}), trying next candidate model...`);
       }
       if (err?.message?.includes('denied') || err?.status === 403 || err?.message?.includes('403') || err?.message?.includes('no longer available')) {
         setGeminiOperational(false);
