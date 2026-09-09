@@ -285,9 +285,12 @@ function extractCommodity(
   for (const line of lines) {
     const m = line.text.match(explicitRegex);
     if (m && m[1]) {
-      detectedCommodity = m[1].trim();
-      commodityLine = line;
-      break;
+      const candidate = m[1].replace(/^[^a-zA-Z0-9]+/, '').replace(/[^a-zA-Z0-9)]+$/, '').trim();
+      if (candidate.length >= 3) {
+        detectedCommodity = candidate;
+        commodityLine = line;
+        break;
+      }
     }
   }
 
@@ -296,19 +299,43 @@ function extractCommodity(
     const categoryKeywords = [
       'biscuit', 'biscuits', 'cookie', 'cookies', 'brownie', 'cake', 'rusk',
       'chips', 'wafers', 'chocolate', 'namkeen', 'noodles', 'pasta', 'tea',
-      'coffee', 'oil', 'soap', 'shampoo', 'lotion', 'cream', 'powder',
-      'atta', 'flour', 'rice', 'dal', 'salt', 'sugar', 'juice', 'sauce',
+      'coffee', 'soap', 'shampoo', 'lotion', 'cream',
+      'atta', 'flour', 'rice', 'juice', 'sauce',
       'butter', 'ghee', 'paneer', 'detergent', 'cleaner'
     ];
     for (const line of lines) {
-      const lower = line.text.toLowerCase();
-      // Skip lines that look like addresses or ingredients
-      if (lower.includes('mfg by') || lower.includes('packed by') || lower.includes('ingredients:')) continue;
+      const rawText = line.text.trim();
+      const lower = rawText.toLowerCase();
+      // Skip lines that look like addresses, ingredients, nutrition, or noisy fragments
+      if (
+        lower.includes('mfg by') ||
+        lower.includes('packed by') ||
+        lower.includes('ingredients') ||
+        lower.includes('energy') ||
+        lower.includes('fat') ||
+        lower.includes('protein') ||
+        lower.includes('sugar') ||
+        lower.includes('salt') ||
+        lower.includes('per 100g') ||
+        (line.confidence !== undefined && line.confidence < 50)
+      ) {
+        continue;
+      }
+
+      // Check alphabetic ratio to avoid OCR noise lines like 2 3 " arm dal dg, Y
+      const alphaCount = rawText.replace(/[^a-zA-Z]/g, '').length;
+      if (alphaCount < 4 || alphaCount / rawText.length < 0.6) {
+        continue;
+      }
+
       for (const kw of categoryKeywords) {
         if (new RegExp(`\\b${kw}\\b`, 'i').test(lower)) {
-          detectedCommodity = line.text.trim();
-          commodityLine = line;
-          break;
+          const cleaned = rawText.replace(/^[^a-zA-Z0-9]+/, '').replace(/[^a-zA-Z0-9)]+$/, '').trim();
+          if (cleaned.length >= 4) {
+            detectedCommodity = cleaned;
+            commodityLine = line;
+            break;
+          }
         }
       }
       if (detectedCommodity) break;
@@ -317,22 +344,33 @@ function extractCommodity(
 
   // D. Prominent title line from image 0 (Principal Display Panel)
   if (!detectedCommodity && lines.length > 0) {
-    const candidate = lines.slice(0, 5).find(l => {
+    const candidate = lines.slice(0, 8).find(l => {
       const t = l.text.trim();
-      return t.length >= 4 && t.length <= 60 &&
-        !t.toLowerCase().includes('mrp') &&
-        !t.toLowerCase().includes('net') &&
-        !t.toLowerCase().includes('pkd') &&
-        !t.toLowerCase().includes('100%');
+      const lower = t.toLowerCase();
+      const alphaCount = t.replace(/[^a-zA-Z]/g, '').length;
+      return (
+        t.length >= 4 &&
+        t.length <= 60 &&
+        alphaCount >= 4 &&
+        alphaCount / t.length >= 0.65 &&
+        (l.confidence === undefined || l.confidence >= 55) &&
+        !lower.includes('mrp') &&
+        !lower.includes('net') &&
+        !lower.includes('pkd') &&
+        !lower.includes('100%') &&
+        !lower.includes('ingredient') &&
+        !lower.includes('nutrition') &&
+        !lower.includes('fssai')
+      );
     });
     if (candidate) {
-      detectedCommodity = candidate.text.trim();
+      detectedCommodity = candidate.text.replace(/^[^a-zA-Z0-9]+/, '').replace(/[^a-zA-Z0-9)]+$/, '').trim();
       commodityLine = candidate;
     }
   }
 
-  // E. Fallback to context
-  if (!detectedCommodity && context?.productName) {
+  // E. Fallback to context if available and cleaner
+  if (!detectedCommodity && context?.productName && !context.productName.toLowerCase().includes('sample')) {
     detectedCommodity = context.productName;
   }
 
@@ -511,24 +549,39 @@ function extractExpiryDate(lines: OcrLine[], fullText: string): MatchedField {
 function extractManufacturer(lines: OcrLine[], fullText: string): MatchedField {
   const mfgPatterns = [
     /(?:manufactured\s*(?:in\s*india\s*)?by|mfd\s*by|mfg\s*by|packed\s*by|marketed\s*by|importer|imported\s*by|mfg\s*&?\s*pkd\s*by|packer|marketed\s*&?\s*distributed\s*by)[.:\s\-_]*([^\n]+)/i,
-    /(?:industries\s*ltd|pvt\s*ltd|private\s*limited|limited|foods\s*ltd|beverages\s*ltd|consumer\s*products)[^\n]*/i,
-    /(?:industrial\s*area|plot\s*no|street|road|pin\s*code|pin\s*[-:]?\s*[1-9][0-9]{5})[^\n]*/i,
+    /(?:industries\s*ltd|pvt\s*ltd|private\s*limited|foods\s*ltd|beverages\s*ltd|consumer\s*products)[^\n]*/i,
+    /(?:industrial\s*area|plot\s*no|pin\s*code|pin\s*[-:]?\s*[1-9][0-9]{5})[^\n]*/i,
   ];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const lower = line.text.toLowerCase();
+    if (
+      lower.includes('ingredient') ||
+      lower.includes('nutrition') ||
+      lower.includes('energy') ||
+      lower.includes('carbohydrate') ||
+      lower.includes('sugar') ||
+      lower.includes('iodised salt')
+    ) {
+      continue;
+    }
+
     for (const pat of mfgPatterns) {
       if (pat.test(line.text)) {
         // Collect multi-line address if next line continues the address
         let val = line.text.trim();
         if (i + 1 < lines.length) {
           const nextLine = lines[i + 1].text.trim();
+          const nextLower = nextLine.toLowerCase();
           if (
             nextLine.length > 5 &&
-            !nextLine.toLowerCase().includes('mrp') &&
-            !nextLine.toLowerCase().includes('pkd') &&
-            !nextLine.toLowerCase().includes('net') &&
-            !nextLine.toLowerCase().includes('consumer')
+            !nextLower.includes('mrp') &&
+            !nextLower.includes('pkd') &&
+            !nextLower.includes('net') &&
+            !nextLower.includes('consumer') &&
+            !nextLower.includes('ingredient') &&
+            !nextLower.includes('nutrition')
           ) {
             val += `, ${nextLine}`;
           }
@@ -552,6 +605,17 @@ function extractConsumerCare(lines: OcrLine[], fullText: string): MatchedField {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const lower = line.text.toLowerCase();
+    if (
+      lower.includes('ingredient') ||
+      lower.includes('nutrition') ||
+      lower.includes('energy') ||
+      lower.includes('sugar') ||
+      lower.includes('iodised salt')
+    ) {
+      continue;
+    }
+
     for (const pat of carePatterns) {
       const m = line.text.match(pat);
       if (m) {

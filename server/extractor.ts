@@ -5,6 +5,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
+import sharp from 'sharp';
 import type { ExtractedField } from './rules-engine';
 import { assessImageQuality, inspectImageBuffer } from './quality';
 import type { ImageQualityAssessment } from './quality';
@@ -43,7 +44,7 @@ const MANDATORY_FIELD_KEYS = [
   'country_of_origin',
 ] as const;
 
-let geminiOperational: boolean = false;
+let geminiOperational: boolean = true;
 let quotaExceededCooldownUntil: number = 0;
 
 export function setGeminiOperational(status: boolean): void {
@@ -54,9 +55,8 @@ export function isGeminiOperational(): boolean {
   return geminiOperational === true && Date.now() > quotaExceededCooldownUntil;
 }
 
-export function setQuotaCooldown(durationMs: number = 5 * 60 * 1000): void {
+export function setQuotaCooldown(durationMs: number = 20 * 1000): void {
   quotaExceededCooldownUntil = Date.now() + durationMs;
-  geminiOperational = false;
 }
 
 export function isQuotaExceeded(): boolean {
@@ -68,9 +68,8 @@ export async function verifyAndInitGeminiOperational(genAI: any): Promise<boolea
     geminiOperational = false;
     return false;
   }
-  // Initialize operational status without making quota-consuming startup pings
   geminiOperational = true;
-  console.log('[MetriScan Vision] Gemini API key configured and ready.');
+  console.log('[MetriScan Vision] Gemini API key configured and operational.');
   return true;
 }
 
@@ -215,11 +214,10 @@ export async function extractDeclarationsWithVision(
     return localResult;
   }
 
-  // Candidate vision models in order of quota efficiency, availability, and multimodality
+  // Candidate vision models in order of capability, availability, and multimodality
   const CANDIDATE_MODELS = [
+    'gemini-3.6-flash',
     'gemini-3.1-flash-lite',
-    'gemini-3.8-flash',
-    'gemini-flash-latest',
   ];
 
   function cleanJsonText(raw: string): string {
@@ -235,33 +233,40 @@ export async function extractDeclarationsWithVision(
     return s.trim();
   }
 
-  // Preprocess images with contrast enhancement and auto-orientation for maximum optical clarity
-  const preprocessedImages: ImageInput[] = await Promise.all(
+  // Optimize and auto-orient images for Gemini Vision
+  const imageParts = await Promise.all(
     images.map(async (img) => {
       try {
-        const pre = await preprocessImageBuffer(img.buffer, {
-          grayscale: false,
-          enhanceContrast: true,
-          minDimension: 1200,
-          maxDimension: 2400,
-        });
+        let pipeline = sharp(img.buffer).rotate(); // auto-orient by EXIF
+        const meta = await pipeline.metadata();
+        const width = meta.width || 1200;
+        const height = meta.height || 1600;
+        const maxDim = Math.max(width, height);
+        if (maxDim > 1800) {
+          const scale = 1800 / maxDim;
+          pipeline = pipeline.resize({
+            width: Math.round(width * scale),
+            height: Math.round(height * scale),
+            fit: 'inside',
+          });
+        }
+        const jpegBuffer = await pipeline.jpeg({ quality: 90 }).toBuffer();
         return {
-          ...img,
-          buffer: pre.buffer,
+          inlineData: {
+            data: jpegBuffer.toString('base64'),
+            mimeType: 'image/jpeg',
+          },
         };
       } catch {
-        return img;
+        return {
+          inlineData: {
+            data: img.buffer.toString('base64'),
+            mimeType: img.mimetype || 'image/jpeg',
+          },
+        };
       }
     })
   );
-
-  // Prepare images for Gemini Vision
-  const imageParts = preprocessedImages.map(img => ({
-    inlineData: {
-      data: img.buffer.toString('base64'),
-      mimeType: img.mimetype || 'image/jpeg',
-    },
-  }));
 
   const prompt = `You are an expert certified regulatory enforcement officer inspecting packaged commodities under India's Legal Metrology (Packaged Commodities) Rules, 2011 (LMPC Rules).
 Carefully inspect all ${images.length} attached photographs of the packaging label.
@@ -356,9 +361,7 @@ Return ONLY a JSON object conforming strictly to this format:
       const isTemporaryDemand = errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE');
 
       if (isQuota) {
-        console.info(`[MetriScan Vision] API rate limit/quota reached on model ${modelName}. Setting cooldown and switching to Local Optical Engine.`);
-        setQuotaCooldown(5 * 60 * 1000);
-        break; // Quota applies across cloud project models; break immediately to avoid repeated 429s
+        console.info(`[MetriScan Vision] API rate limit/quota reached on model ${modelName}, trying next candidate model...`);
       } else if (isTemporaryDemand) {
         console.info(`[MetriScan Vision] Model ${modelName} experiencing temporary demand (503), switching to next candidate model...`);
       } else {
@@ -370,6 +373,9 @@ Return ONLY a JSON object conforming strictly to this format:
 
   // If cloud vision API call did not succeed, seamlessly fallback to Local Optical Engine
   if (!parsed) {
+    if (visionError && (visionError.includes('429') || visionError.includes('quota') || visionError.includes('RESOURCE_EXHAUSTED'))) {
+      setQuotaCooldown(20 * 1000);
+    }
     console.log('[MetriScan Vision] Seamlessly processing inspection with Local Optical OCR Engine...');
     const localResult = await extractWithLocalOcr(images, inspectionId, isImported, baseQuality, context);
     if (visionError && (visionError.includes('429') || visionError.includes('quota') || visionError.includes('RESOURCE_EXHAUSTED') || visionError.includes('exceeded your current quota'))) {
@@ -550,10 +556,31 @@ export async function extractSingleImageOcr(
   }
 
   const CANDIDATE_MODELS = [
+    'gemini-3.6-flash',
     'gemini-3.1-flash-lite',
-    'gemini-3.8-flash',
-    'gemini-flash-latest',
   ];
+
+  let prepBuffer = imageBuffer;
+  let prepMime = mimetype || 'image/jpeg';
+  try {
+    let pipeline = sharp(imageBuffer).rotate();
+    const meta = await pipeline.metadata();
+    const width = meta.width || 1200;
+    const height = meta.height || 1600;
+    const maxDim = Math.max(width, height);
+    if (maxDim > 1800) {
+      const scale = 1800 / maxDim;
+      pipeline = pipeline.resize({
+        width: Math.round(width * scale),
+        height: Math.round(height * scale),
+        fit: 'inside',
+      });
+    }
+    prepBuffer = await pipeline.jpeg({ quality: 90 }).toBuffer();
+    prepMime = 'image/jpeg';
+  } catch {
+    prepBuffer = imageBuffer;
+  }
 
   const prompt = `You are an automated OCR and Legal Metrology packaging scanner.
 Carefully read ALL text visible in this ${panelType} packaging label image.
@@ -590,8 +617,8 @@ Return ONLY a JSON object:
         contents: [
           {
             inlineData: {
-              data: processedBuffer.toString('base64'),
-              mimeType: mimetype || 'image/jpeg',
+              data: prepBuffer.toString('base64'),
+              mimeType: prepMime,
             },
           },
           prompt,
@@ -615,23 +642,20 @@ Return ONLY a JSON object:
       const isTemporaryDemand = lastErr.includes('503') || lastErr.includes('high demand') || lastErr.includes('UNAVAILABLE');
 
       if (isQuota) {
-        console.info(`[MetriScan OCR] API rate limit/quota reached on model ${model}. Setting cooldown and falling back to Local Optical Scanner.`);
-        setQuotaCooldown(5 * 60 * 1000);
-        break;
+        console.info(`[MetriScan OCR] API rate limit/quota reached on model ${model}, trying next model...`);
       } else if (isTemporaryDemand) {
         console.info(`[MetriScan OCR] Model ${model} experiencing temporary demand (503), trying next model...`);
       } else {
         const brief = lastErr.includes('403') || lastErr.includes('denied') ? 'Access Restricted' : 'Temporary Issue';
         console.info(`[MetriScan OCR] Model ${model} note (${brief}), trying next candidate model...`);
       }
-      if (err?.message?.includes('denied') || err?.status === 403 || err?.message?.includes('403') || err?.message?.includes('no longer available')) {
-        setGeminiOperational(false);
-        break;
-      }
     }
   }
 
   if (!parsed) {
+    if (lastErr && (lastErr.includes('429') || lastErr.includes('quota') || lastErr.includes('RESOURCE_EXHAUSTED'))) {
+      setQuotaCooldown(20 * 1000);
+    }
     console.log('[MetriScan OCR] Gemini model extraction unavailable; using Local Optical Scanner...');
     return await extractLocalSingleImageOcr(imageBuffer, mimetype, quality, panelType);
   }

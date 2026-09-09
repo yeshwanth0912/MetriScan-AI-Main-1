@@ -43,6 +43,31 @@ interface StoredUploadedImage {
 }
 const storedImagesMap = new Map<string, StoredUploadedImage>();
 
+function getStoredInspectionImage(imageId: string, inspectionId?: string): StoredUploadedImage | null {
+  const inMem = storedImagesMap.get(imageId);
+  if (inMem && inMem.buffer) return inMem;
+
+  try {
+    const diskPath = path.join(process.cwd(), 'storage', 'originals', `${imageId}.jpg`);
+    if (fs.existsSync(diskPath)) {
+      const buf = fs.readFileSync(diskPath);
+      const restored: StoredUploadedImage = {
+        id: imageId,
+        inspectionId: inspectionId || '',
+        imageType: 'front',
+        buffer: buf,
+        mimetype: 'image/jpeg',
+        fileName: `${imageId}.jpg`,
+      };
+      storedImagesMap.set(imageId, restored);
+      return restored;
+    }
+  } catch (err) {
+    console.warn('[MetriScan Storage] Failed to load image from disk:', err);
+  }
+  return null;
+}
+
 // Interfaces & In-memory store
 interface User {
   id: string;
@@ -1248,6 +1273,16 @@ async function startServer() {
         mimetype: uploadedFile.mimetype || 'image/jpeg',
         fileName: uploadedFile.originalname || `${imageType}.jpg`,
       });
+
+      try {
+        const storageDir = path.join(process.cwd(), 'storage', 'originals');
+        if (!fs.existsSync(storageDir)) {
+          fs.mkdirSync(storageDir, { recursive: true });
+        }
+        fs.writeFileSync(path.join(storageDir, `${imageId}.jpg`), uploadedFile.buffer);
+      } catch (err) {
+        console.warn('[MetriScan Storage] Failed to write image to disk:', err);
+      }
     }
 
     ins.images.push(newImage);
@@ -1262,6 +1297,12 @@ async function startServer() {
     }
     ins.images = ins.images.filter(img => img.id !== req.params.imageId);
     storedImagesMap.delete(req.params.imageId);
+    try {
+      const diskPath = path.join(process.cwd(), 'storage', 'originals', `${req.params.imageId}.jpg`);
+      if (fs.existsSync(diskPath)) {
+        fs.unlinkSync(diskPath);
+      }
+    } catch {}
     res.status(204).send();
   });
 
@@ -1272,7 +1313,7 @@ async function startServer() {
       return res.status(404).send('Inspection not found');
     }
 
-    const stored = storedImagesMap.get(req.params.imageId);
+    const stored = getStoredInspectionImage(req.params.imageId, ins.id);
     if (stored && stored.buffer) {
       res.setHeader('Content-Type', stored.mimetype || 'image/jpeg');
       res.setHeader('Content-Length', stored.buffer.length);
@@ -1303,7 +1344,7 @@ async function startServer() {
 
     // 1. Process uploaded packaging images or digital listing text
     const insStored = ins.images
-      .map(img => storedImagesMap.get(img.id))
+      .map(img => getStoredInspectionImage(img.id, ins.id))
       .filter((s): s is StoredUploadedImage => Boolean(s && s.buffer));
 
     let extractedFields: ExtractedField[] = [];
