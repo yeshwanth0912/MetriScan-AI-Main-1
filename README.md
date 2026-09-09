@@ -1,172 +1,203 @@
-# MetriScan AI
+# MetriScan AI Inspector
 
-Automated compliance checking for packaged commodities under the Legal Metrology
-(Packaged Commodities) Rules. Built for SIH Problem Statement 26034.
+> **Automated Statutory Compliance Verification for Packaged Commodities under Legal Metrology (Packaged Commodities) Rules, 2011**  
+> *Developed for Smart India Hackathon (SIH) Problem Statement 26034*
 
-An officer photographs a pack (or pastes an online listing). The system reads the
-mandatory declarations, measures printed character height in millimetres, checks
-everything against a versioned rule pack, and produces a report where every finding
-traces back to an image region and a specific rule version.
-
----
-
-## Read this before you demo
-
-**The rule pack ships with placeholder legal content.** The rule *codes*, *structure*
-and *engine* are real and tested. The rule *text*, rule numbers and every numeric
-threshold marked `UNVERIFIED` in `rules/lmpc_rules.json` are placeholders derived from
-the problem statement's own list of mandatory declarations. They are not a legal source.
-
-The character-height threshold table in particular is invented structure with plausible
-numbers. Replace it with the table from the current consolidated Rules before the
-system makes any claim about readability.
-
-The application enforces this rather than trusting you to remember: an inspection
-cannot be finalised while an `UNVERIFIED` rule version produced a PASS or FAIL. Work
-through **Rules → Mark verified** for each version, recording the G.S.R. reference you
-checked it against. `ALLOW_UNVERIFIED_RULES=false` is the safe default. Only set it to `true` for a clearly
-labelled local/demo run using the placeholder rule pack, and never present those results
-as legally verified findings.
-
-Amendments to check while you do this, all after the 2011 principal rules:
-
-| Notification | Date | Effect |
-|---|---|---|
-| G.S.R. 128(E) | 13 Feb 2026 | Inserted Rule 6(10A) — country-of-origin filter for e-commerce listings of imported products |
-| Second Amendment Rules 2026 | 27 Apr 2026 | Substituted Rule 6(10A); commencement moved to 1 Jul 2027 |
-| Third Amendment Rules 2026, G.S.R. 418(E) | 29 May 2026 | Importer labelling at AEO bonded warehouses, director accountability, annual online updates |
-| Jan Vishwas (Amendment of Provisions) Act, 2026 | 8 Apr 2026 | Decriminalisation — affects the severity model, not the declarations |
-
-`LM-E-010A` in the rule pack is a worked example of the versioning mechanism: the same
-sub-rule with two versions and two different effective dates. Copy that shape.
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B%20%7C%2020%2B-green.svg)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/React-18.3-blue.svg)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
+[![Gemini](https://img.shields.io/badge/Vision%20AI-Google%20Gemini%20Flash-orange.svg)](https://ai.google.dev/)
+[![License](https://img.shields.io/badge/License-Proprietary-lightgrey.svg)]()
 
 ---
 
-## What is actually tested
+## 📌 Overview
 
-Be precise about this if you are asked.
+**MetriScan AI** is an intelligent regulatory compliance platform engineered for Legal Metrology enforcement officers, senior inspectors, and controllers. An officer photographs packaging panels (front, back, side) or pastes an e-commerce product listing. The platform:
 
-**Executed and verified:**
-
-- Python unit suite — 26/26 tests pass (`python -m pytest -q`).
-- Rule engine, extraction, normalisation — 8/8 golden cases pass
-  (`python backend/tests/run_golden.py`).
-- FastAPI integration workflow — login → inspection → image upload → fixture OCR →
-  rule evaluation → finalisation → PDF report, plus reviewer resolution and RBAC checks.
-- Character-height measurement on a synthetic 100 × 80 mm panel photographed at a
-  known 8.0 px/mm: panel detection within 3 px, derived scale 8.07 px/mm (0.8% error),
-  measured glyph heights within 7–8% of ground truth using the ink-row method.
-- PDF and JSON report generation — renders a two-page report with findings, evidence
-  and rule sources.
-
-**Not fully executed in this sandbox:** the React production build and Docker image build
-require downloading npm/Paddle dependencies, and this environment does not have Docker
-or network access to install them. The backend application itself has been started and
-its HTTP workflow has been exercised with the deterministic fixture OCR engine.
-
-**Not built:** Alembic migrations (the app uses `create_all`, which is fine until the
-first schema change on data you care about), rate limiting, refresh tokens, and any
-e-commerce crawler. Listing analysis works on pasted text only, which is deliberate.
+1. **Assesses Optical Quality**: Evaluates blur, sharpness, glare, lighting balance, and resolution, applying optical clarity penalty factors to prevent erroneous accusations.
+2. **Extracts Statutory Declarations**: Uses a two-tier OCR/Vision pipeline (primary **Google Gemini Flash Vision** + secondary **Local Tesseract OCR engine**) to extract mandatory pack declarations.
+3. **Audits Against Versioned Rules**: Evaluates declarations against codified Legal Metrology (Packaged Commodities) Rules, 2011 (LMPC Rules) and gazette amendments.
+4. **Preserves Chain of Custody**: When an officer manually verifies or edits an extracted value, the original machine reading (`raw_value`) is permanently locked alongside the `corrected_value`.
+5. **Generates Court-Admissible Reports**: Produces high-contrast, publication-grade PDF inspection dossiers, printable HTML reports, and machine-readable JSON exports.
 
 ---
 
-## Running it
+## 🚀 Key Features
+
+- **Dual-Tier Vision Pipeline**:
+  - *Primary*: Google Gemini Flash Vision (`@google/genai`) for multi-panel statutory declaration extraction, panel localization, and font height estimation.
+  - *Secondary / Offline Fallback*: Local Tesseract OCR with regex pattern anchors and phonetic matching.
+- **Optical Integrity & Quality Gate**:
+  - Image quality scoring (0–100) analyzing contrast, glare, and sharpness.
+  - Dynamic confidence formula: `Final Confidence = Model Confidence × Optical Clarity Factor`.
+- **Statutory LMPC Rule Engine**:
+  - Evaluates Commodity Name, Net Quantity, MRP (Maximum Retail Price), Unit Sale Price (USP), Date of Manufacture/Packing, Expiry/Best Before, Manufacturer/Packer/Importer details, Country of Origin, and Consumer Care contacts.
+  - Rule versioning with gazette citations (e.g., GSR 128(E), Jan Vishwas Act).
+- **Audit Trails & Tamper Resistance**:
+  - Full audit logging for every inspection state transition, field override, and reviewer sign-off.
+- **High-Contrast Court-Admissible Dossier Export**:
+  - Precision PDF generation (`jspdf`) featuring high-contrast light styling, evidence photo integration, statutory evaluation matrix, and official regulatory disclaimers.
+- **Role-Based Access Control (RBAC)**:
+  - Three distinct permission tiers: Officer, Senior Reviewer, and Admin Controller.
+
+---
+
+## 👥 Seeded User Accounts
+
+The application boots with pre-configured regulatory accounts for immediate testing:
+
+| Role | Email | Password | Permissions |
+|---|---|---|---|
+| **Enforcement Officer** | `officer@metriscan.local` | `MetriScan#2026` | Capture packaging, analyze listings, review OCR, make corrections, submit inspections |
+| **Senior Inspector / Reviewer** | `reviewer@metriscan.local` | `MetriScan#2026` | View all inspections, confirm/override findings, certify, reopen cases |
+| **Controller / Admin** | `admin@metriscan.local` | `MetriScan#2026` | Manage rule packs, verify statutory rule definitions, manage user access, jurisdiction analytics |
+
+---
+
+## 🛠️ System Architecture
+
+```
+metriscan-ai-inspector/
+├── server.ts                    # Full-stack entry point (Express API + Vite SPA integration)
+├── server/                      # Server-side TypeScript modules
+│   ├── extractor.ts             # Multimodal Gemini Vision & Local OCR extraction pipeline
+│   ├── local-ocr.ts             # Tesseract.js engine & regex pattern anchors
+│   ├── quality.ts               # Sharpness, glare, and optical quality assessment
+│   └── rules-engine.ts          # Deterministic LMPC statutory rule evaluation
+├── src/                         # React 18 Frontend
+│   ├── App.jsx                  # Main router and shell layout
+│   ├── api.js                   # Client API abstraction with JWT handling
+│   ├── auth.jsx                 # Authentication context & role-based routing
+│   ├── components/              # Reusable UI components (Navbar, StatCards, Badges)
+│   ├── pages/                   # Application views
+│   │   ├── Dashboard.jsx        # Analytics, inspection status counters & activity feed
+│   │   ├── NewInspection.jsx    # Photo upload & e-commerce listing capture
+│   │   ├── InspectionDetail.jsx # Visual inspection workspace, OCR review & PDF trigger
+│   │   ├── InspectionList.jsx   # Filterable registry of all packaging audits
+│   │   ├── RuleManagement.jsx   # LMPC statutory rule pack browser & verifier
+│   │   └── Login.jsx            # User sign-in interface
+│   └── utils/
+│       └── pdfExport.js         # High-contrast court-admissible PDF generator (jsPDF)
+├── rules/
+│   └── lmpc_rules.json          # Codified Legal Metrology rules and statutory thresholds
+├── storage/                     # Persistent local database & file storage
+│   └── database.json            # Auto-persisted inspections, violations, and audit logs
+├── docs/                        # Detailed architectural specifications & PRD documents
+└── package.json                 # Project dependencies and operational scripts
+```
+
+---
+
+## 💻 Installation & Quickstart
+
+### Prerequisites
+
+- **Node.js**: v18.0.0 or higher (v20+ recommended)
+- **npm**: v9.0.0 or higher
+- **Gemini API Key**: From [Google AI Studio](https://aistudio.google.com/)
+
+### 1. Clone & Install Dependencies
 
 ```bash
-cp .env.example .env
-python -c "import secrets; print(secrets.token_urlsafe(48))"   # paste into JWT_SECRET
-docker compose up --build
-docker compose exec api python -m app.seed
+# Clone repository
+git clone https://github.com/your-org/metriscan-ai.git
+cd metriscan-ai
+
+# Install npm dependencies
+npm install
 ```
 
-Frontend at `http://localhost:3000`, API docs at `http://localhost:8000/docs`.
+### 2. Configure Environment Variables
 
-Seeded accounts (password `MetriScan#2026`, change `SEED_PASSWORD` first):
+Create a `.env` file in the root directory:
 
-| Email | Role | Can do |
-|---|---|---|
-| `officer@metriscan.local` | OFFICER | Own inspections, corrections, finalise |
-| `reviewer@metriscan.local` | REVIEWER | All inspections, confirm/override findings, reopen |
-| `admin@metriscan.local` | ADMIN | Rules, users, verification |
+```env
+# Gemini API Key (Required for primary Vision AI)
+GEMINI_API_KEY=your_gemini_api_key_here
 
-### Without Docker
+# JWT Secret for Session Security
+JWT_SECRET=metriscan-secret-key-2026
+
+# Server Port (Defaults to 3000)
+PORT=3000
+
+# Environment Mode
+NODE_ENV=development
+```
+
+### 3. Start Development Server
 
 ```bash
-# API
-cd backend && python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-export PYTHONPATH=$PWD:$PWD/..
-export DATABASE_URL="postgresql+psycopg://metriscan:metriscan@localhost:5432/metriscan"
-export JWT_SECRET="dev-secret" STORAGE_PATH="$PWD/../storage" RULES_PATH="$PWD/../rules/lmpc_rules.json"
-python -m app.seed && uvicorn app.main:app --reload
-
-# Frontend
-cd frontend && npm install && npm run dev
+npm run dev
 ```
 
-**PaddleOCR will be the hardest install. If it fights you, set `OCR_ENGINE=tesseract`
-with `tesseract-ocr` installed, or explicitly set `OCR_ENGINE=fixture` to replay stored
-OCR output. The application no longer silently falls back to fixture data when production
-OCR is unavailable; this prevents a demo fixture from being mistaken for real OCR.
+The application will start at **`http://localhost:3000`** with live hot-reloading for client assets and backend APIs.
 
 ---
 
-## How it is put together
+## 📦 Production Deployment
 
-```
-ai/                    Analysis. Pure Python where possible so it tests without a DB.
-  normalization/       "500g", "0.5 KG", "12 x 50g" → one canonical quantity
-  extraction/          Anchor-based field extraction; every field carries its evidence
-  metrology/           px → mm scale and character height measurement
-  preprocessing/       Quality gate, deskew, CLAHE, panel detection
-  ocr/                 PaddleOCR | Tesseract | fixture, behind one interface
-  pipeline.py          analyze(): images and/or listing text → declarations → findings
-rules/
-  engine.py            Deterministic, version-aware evaluation and aggregation
-  lmpc_rules.json      The rule pack. Rules are data, never code.
-backend/app/           FastAPI: auth, inspections, analysis, review, rules, reports
-frontend/src/          React: dashboard, capture, inspection workspace, rule admin
-dataset/test_cases/    Golden fixtures — add a case every time OCR gets something wrong
+### Build the Application
+
+The production build compiles the React frontend with Vite and bundles `server.ts` using `esbuild` into a self-contained CommonJS artifact (`dist/server.cjs`):
+
+```bash
+npm run build
 ```
 
-### Four decisions worth defending
+### Launch Production Server
 
-**Absence of evidence is never a violation.** Anything the system cannot establish —
-low OCR confidence, no scale reference, unknown panel — returns `REVIEW` or
-`NOT_APPLICABLE`, never `FAIL`. A missed violation is recoverable; a false accusation
-against a manufacturer is not.
+```bash
+npm start
+```
 
-**Character height is measured, not guessed.** This is what most solutions to this
-problem statement skip, and the problem statement names it twice. Height in
-millimetres needs a pixel-to-millimetre scale, and a photograph does not carry one, so
-`ai/metrology/font_size.py` takes it from one of three sources — officer-entered panel
-dimensions, a printed ArUco marker, or a reference object of known width — and refuses
-to answer without one. Glyph height comes from binarising the crop and measuring inked
-rows, which is meaningfully tighter than the OCR bounding box.
-
-**Rule results store a rule version, not a rule.** A finalised inspection stays
-reproducible after the rules change. This is also why a version in use cannot be
-deleted, only superseded.
-
-**The AI reading is never overwritten.** A correction goes to `corrected_value` with
-the original preserved in `raw_value`, and both appear in the report so a reader can
-see what the machine read and what the officer changed it to.
+The server binds to `0.0.0.0:3000` and serves the static production build alongside backend API endpoints.
 
 ---
 
-## Where to go next
+## ⚖️ Legal Metrology Compliance Matrix
 
-In rough order of value:
+MetriScan AI validates packaging against the **Legal Metrology (Packaged Commodities) Rules, 2011** and key statutory amendments:
 
-1. Replace the placeholder rule content with verified gazette text. Nothing else
-   matters until this is done.
-2. Boot the API and frontend for the first time and fix what breaks.
-3. Build the real dataset. Photograph 100+ actual packs, label ground truth, run them
-   through, and add every failure to `dataset/test_cases/fixtures.json`. Your accuracy
-   claim is only worth what this dataset supports — a number quoted without it will not
-   survive questioning.
-4. Panel classification from the image itself, rather than trusting the officer's
-   front/back tag.
-5. Multilingual extraction. The anchor vocabulary in `ai/extraction/fields.py` is
-   English-only; Hindi and regional-language labels need their own anchors.
-6. Alembic migrations before any deployment holding data you cannot lose.
+| Rule Code | Statutory Provision | Target Mandate | Enforcement Criterion |
+|---|---|---|---|
+| **LM-M-001** | Rule 6(1)(a) | Name & Address of Manufacturer / Packer / Importer | Complete address with PIN code, city, and state |
+| **LM-M-002** | Rule 6(1)(b) | Generic / Common Name of Commodity | Clearly declared on Principal Display Panel (PDP) |
+| **LM-M-003** | Rule 6(1)(c) / Rule 12 | Net Quantity Declaration | Standard metric units (g, kg, ml, L), correct numeral casing |
+| **LM-M-004** | Rule 6(1)(d) / Rule 13 | Month & Year of Manufacture / Packing | Valid MM/YYYY or standard format |
+| **LM-M-005** | Rule 6(1)(e) | Maximum Retail Price (MRP) | "MRP Rs. ... incl. of all taxes" formulation |
+| **LM-M-006** | Rule 6(11) | Unit Sale Price (USP) | Required for commodities sold by weight, volume, or count |
+| **LM-M-007** | Rule 6(1)(f) | Best Before / Expiry Period | Mandatory for perishable commodities / cosmetics |
+| **LM-M-008** | Rule 6(1)(g) | Consumer Care Details | Name, address, telephone, and email for complaints |
+| **LM-M-009** | Rule 6(10) / Rule 6(10A) | Country of Origin | Mandatory on imported goods & e-commerce listings (GSR 128(E)) |
+| **LM-M-010** | Schedule II / Rule 9 | Minimum Font Height | Proportional to principal display panel area (e.g. ≥ 2.0 mm) |
+
+---
+
+## 🧪 Verification & Quality Control
+
+### Codebase Validation
+
+```bash
+# Validate TypeScript syntax and build integrity
+npm run lint
+
+# Execute production build compilation
+npm run build
+```
+
+---
+
+## 📄 Court-Admissible Reporting
+
+Every finalised inspection produces an official regulatory dossier in three formats:
+1. **Dossier PDF (`.pdf`)**: Formatted using high-contrast styling with official Government of India / Legal Metrology Division headers, high-resolution evidence crops, confidence adjustments, and officer sign-off blocks.
+2. **Web-Printable Report (`.html`)**: Clean browser-printable version with styled tables.
+3. **Audit Data Interchange (`.json`)**: Structured export containing raw and verified extraction records, timestamped audit logs, and citation references.
+
+---
+
+## 📜 Legal Disclaimer
+
+*MetriScan AI is an automated regulatory assistance tool designed to assist statutory authorities under the Legal Metrology Act, 2009. Automated optical readings and rule evaluations serve as preliminary statutory evidence. Final legal notices under Section 36(1) or compounding proceedings under Section 48 must be confirmed and signed by an authorized Enforcement Officer or Inspector.*

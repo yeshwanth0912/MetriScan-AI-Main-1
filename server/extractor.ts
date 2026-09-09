@@ -59,7 +59,7 @@ export async function verifyAndInitGeminiOperational(genAI: any): Promise<boolea
     return false;
   }
 
-  const pingModels = ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+  const pingModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.1-pro-preview'];
   for (const model of pingModels) {
     try {
       await genAI.models.generateContent({
@@ -70,7 +70,7 @@ export async function verifyAndInitGeminiOperational(genAI: any): Promise<boolea
       console.log(`[MetriScan Vision] Cloud AI Vision model (${model}) verified operational.`);
       return true;
     } catch (err: any) {
-      // try next candidate model
+      // silently proceed to next candidate model
     }
   }
 
@@ -212,7 +212,12 @@ export async function extractDeclarationsWithVision(
   }
 
   // Candidate vision models in order of availability, speed, and multimodality
-  const CANDIDATE_MODELS = ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+  const CANDIDATE_MODELS = [
+    'gemini-3.8-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-flash-latest',
+    'gemini-3.1-pro-preview',
+  ];
 
   function cleanJsonText(raw: string): string {
     let s = raw.trim();
@@ -344,7 +349,12 @@ Return ONLY a JSON object conforming strictly to this format:
     } catch (err: any) {
       const errMsg = err?.message || String(err || '');
       visionError = errMsg;
-      console.warn(`[MetriScan Vision] Model ${modelName} call issue:`, errMsg);
+      const isTemporaryDemand = errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('UNAVAILABLE');
+      if (isTemporaryDemand) {
+        console.log(`[MetriScan Vision] Model ${modelName} experiencing temporary demand (503), switching to next candidate model...`);
+      } else {
+        console.log(`[MetriScan Vision] Model ${modelName} call issue (${errMsg.slice(0, 100)}), trying next candidate model...`);
+      }
     }
   }
 
@@ -525,7 +535,12 @@ export async function extractSingleImageOcr(
     return await extractLocalSingleImageOcr(processedBuffer, mimetype, quality, panelType);
   }
 
-  const CANDIDATE_MODELS = ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+  const CANDIDATE_MODELS = [
+    'gemini-3.8-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-flash-latest',
+    'gemini-3.1-pro-preview',
+  ];
 
   const prompt = `You are an automated OCR and Legal Metrology packaging scanner.
 Carefully read ALL text visible in this ${panelType} packaging label image.
@@ -583,6 +598,12 @@ Return ONLY a JSON object:
       }
     } catch (err: any) {
       lastErr = err?.message || 'Model call failed';
+      const isTemporaryDemand = lastErr.includes('503') || lastErr.includes('high demand') || lastErr.includes('UNAVAILABLE');
+      if (isTemporaryDemand) {
+        console.log(`[MetriScan OCR] Model ${model} experiencing temporary demand (503), switching to next candidate model...`);
+      } else {
+        console.log(`[MetriScan OCR] Model ${model} note (${lastErr.slice(0, 100)}), trying next candidate model...`);
+      }
       if (err?.message?.includes('denied') || err?.status === 403 || err?.message?.includes('403') || err?.message?.includes('no longer available')) {
         setGeminiOperational(false);
         break;
